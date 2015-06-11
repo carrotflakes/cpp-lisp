@@ -334,52 +334,52 @@ Env::Env() {
 
 	obj = intern("do");
 	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
-		return args.back();
-	});
+			return args.back();
+		});
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("+");
 	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
-		int value = 0;
-		for (LobjSPtr &objPtr : args) {
-			if (typeid(*objPtr) != typeid(Int)) throw "bad arguments for function '+'";
-			value += dynamic_cast<Int*>(objPtr.get())->value;
-		}
-		return LobjSPtr(new Int(value));
-	});
+			int value = 0;
+			for (LobjSPtr &objPtr : args) {
+				if (typeid(*objPtr) != typeid(Int)) throw "bad arguments for function '+'";
+				value += dynamic_cast<Int*>(objPtr.get())->value;
+			}
+			return LobjSPtr(new Int(value));
+		});
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("-");
 	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
-		if (args.size() == 0 || typeid(*args[0]) != typeid(Int))
-			throw "bad arguments for function '-'";
-		int value = dynamic_cast<Int*>(args[0].get())->value;
-		if (args.size() == 1)
-			return LobjSPtr(new Int(-value));
-		for (int i = 1; i < args.size(); ++i) {
-			if (typeid(*args[i]) != typeid(Int)) throw "bad arguments for function '-'";
-			value -= dynamic_cast<Int*>(args[i].get())->value;
-		}
-		return LobjSPtr(new Int(value));
-	});
+			if (args.size() == 0 || typeid(*args[0]) != typeid(Int))
+				throw "bad arguments for function '-'";
+			int value = dynamic_cast<Int*>(args[0].get())->value;
+			if (args.size() == 1)
+				return LobjSPtr(new Int(-value));
+			for (int i = 1; i < args.size(); ++i) {
+				if (typeid(*args[i]) != typeid(Int)) throw "bad arguments for function '-'";
+				value -= dynamic_cast<Int*>(args[i].get())->value;
+			}
+			return LobjSPtr(new Int(value));
+		});
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("*");
 	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
-		int value = 1;
-		for (LobjSPtr &objPtr : args) {
-			if (typeid(*objPtr) != typeid(Int)) throw "bad arguments for function '*'";
-			value *= dynamic_cast<Int*>(objPtr.get())->value;
-		}
-		return LobjSPtr(new Int(value));
-	});
+			int value = 1;
+			for (LobjSPtr &objPtr : args) {
+				if (typeid(*objPtr) != typeid(Int)) throw "bad arguments for function '*'";
+				value *= dynamic_cast<Int*>(objPtr.get())->value;
+			}
+			return LobjSPtr(new Int(value));
+		});
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("=");
 	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
-		if (args.size() == 0) throw "bad arguments for function '='";
-		for (LobjSPtr &objPtr : args) {
-			if (typeid(*objPtr) != typeid(Int)) throw "bad arguments for function '='";
+			if (args.size() == 0) throw "bad arguments for function '='";
+			for (LobjSPtr &objPtr : args) {
+				if (typeid(*objPtr) != typeid(Int)) throw "bad arguments for function '='";
 		}
 		for (int i = 0; i < args.size() - 1; ++i) {
 			if (dynamic_cast<Int*>(args[i].get())->value !=
@@ -392,52 +392,62 @@ Env::Env() {
 
 	obj = intern("<");
 	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
-		if (args.size() == 0) throw "bad arguments for function '<'";
-		for (LobjSPtr &objPtr : args) {
-			if (typeid(*objPtr) != typeid(Int)) throw "bad arguments for function '<'";
-		}
-		for (int i = 0; i < args.size() - 1; ++i) {
-			if (dynamic_cast<Int*>(args[i].get())->value >=
-					dynamic_cast<Int*>(args[i+1].get())->value)
-				return intern("nil");
-		}
-		return intern("t");
-	});
+			if (args.size() == 0) throw "bad arguments for function '<'";
+			for (LobjSPtr &objPtr : args) {
+				if (typeid(*objPtr) != typeid(Int)) throw "bad arguments for function '<'";
+			}
+			for (int i = 0; i < args.size() - 1; ++i) {
+				if (dynamic_cast<Int*>(args[i].get())->value >=
+						dynamic_cast<Int*>(args[i+1].get())->value)
+					return intern("nil");
+			}
+			return intern("t");
+		});
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("print");
 	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
-		for (LobjSPtr &objPtr : args) {
-			objPtr->print(std::cout);
-		}
-		return intern("nil");
-	});
+			for (LobjSPtr &objPtr : args) {
+				objPtr->print(std::cout);
+			}
+			return intern("nil");
+		});
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("println");
 	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
-		for (LobjSPtr &objPtr : args) {
-			objPtr->print(std::cout);
-			std::cout << std::endl;
-		}
-		return intern("nil");
-	});
+			for (LobjSPtr &objPtr : args) {
+				objPtr->print(std::cout);
+				std::cout << std::endl;
+			}
+			return intern("nil");
+		});
+	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
+
+	obj = intern("print-to-string");
+	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
+			std::stringstream ss;
+			for (LobjSPtr &objPtr : args) {
+				objPtr->print(ss);
+			}
+			return LobjSPtr(new String(ss.str()));
+		});
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("car");
 	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
-		if (args.size() != 1 || typeid(*args[0]) != typeid(Cons))
-			throw "bad arguments for function 'car'";
-		return dynamic_cast<Cons*>(args[0].get())->car;
-	});
+			if (args.size() != 1 || typeid(*args[0]) != typeid(Cons))
+				throw "bad arguments for function 'car'";
+			return dynamic_cast<Cons*>(args[0].get())->car;
+		});
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("cdr");
 	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
-		if (args.size() != 1 || typeid(*args[0]) != typeid(Cons))
-			throw "bad arguments for function 'cdr'";
-		return dynamic_cast<Cons*>(args[0].get())->cdr;
-	});
+			if (args.size() != 1 || typeid(*args[0]) != typeid(Cons))
+				throw "bad arguments for function 'cdr'";
+			return dynamic_cast<Cons*>(args[0].get())->cdr;
+		});
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("cons");

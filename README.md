@@ -24,6 +24,7 @@ Toy LISP implementation for c++0x.
 - `<`
 - `print` Prints argument objects. No newline.
 - `println` Prints argument objects with newlines.
+- `print-to-string`
 - `car`
 - `cdr`
 - `cons`
@@ -41,4 +42,22 @@ Toy LISP implementation for c++0x.
          n)))
 (println (fib 10))
 ; 55
+```
+
+### Tower of Hanoi
+```
+(set! hanoi
+  (\ (n a b c)
+     (if (< 0 n)
+         (do (hanoi (- n 1) a b c)
+             (print "move " n " from " a " to " c "\n")
+             (hanoi (- n 1) b c a)))))
+(hanoi 3 "towerA" "towerB" "towerC")
+;move 1 from towerA to towerC
+;move 2 from towerA to towerC
+;move 1 from towerB to towerA
+;move 3 from towerA to towerC
+;move 1 from towerB to towerA
+;move 2 from towerB to towerA
+;move 1 from towerC to towerB
 ```
