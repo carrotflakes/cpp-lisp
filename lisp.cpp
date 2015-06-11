@@ -487,11 +487,11 @@ LobjSPtr Env::procSpecialForm(LobjSPtr objPtr) {
 	} else if (opName == "quote") {
 		if (length == 2)
 			return listNth(objPtr, 1);
-	} else if (opName == "setq") {
+	} else if (opName == "set!") {
 		if (length == 3) {
 			LobjSPtr variable = listNth(objPtr, 1);
 			if (typeid(*variable) != typeid(Symbol))
-				throw "bad setq";
+				throw "bad set!";
 			bind(eval(listNth(objPtr, 2)), dynamic_cast<Symbol*>(variable.get()));
 			return variable;
 		}

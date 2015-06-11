@@ -5,13 +5,14 @@ Toy LISP implementation for c++0x.
 - Symbol
 - Cons
 - Int
+- String
 - Func
 - BuiltinFunc
 
 ## Special forms
 - `if`
 - `quote`
-- `setq`
+- `set!`
 - `\` a.k.a. `lambda`.
 
 ## Built-in functions
@@ -32,7 +33,7 @@ Toy LISP implementation for c++0x.
 
 ### Fibonacci
 ```
-(setq fib
+(set! fib
   (\ (n)
      (if (< 1 n)
          (+ (fib (- n 1)) (fib (- n 2)))
