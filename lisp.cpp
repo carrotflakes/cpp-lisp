@@ -168,6 +168,8 @@ public:
 
 	LobjSPtr read(std::istream &is);
 
+	LobjSPtr macroexpand1 (LobjSPtr objPtr);
+	LobjSPtr macroexpand (LobjSPtr objPtr);
 	LobjSPtr procSpecialForm(LobjSPtr objPtr);
 	LobjSPtr eval(LobjSPtr objPtr);
 
@@ -406,9 +408,24 @@ Env::Env() {
 	});
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
+	obj = intern("read");
+	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
+		if (args.size() != 0)
+			throw "bad arguments for function 'read'";
+		return env.read(std::cin);
+	});
+	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
+
 	obj = intern("exit");
 	bind(obj, dynamic_cast<Symbol*>(obj.get()));
 }
+
+/*
+LobjSPtr Env::macroexpand1 (LobjSPtr objPtr) {
+}
+
+LobjSPtr Env::macroexpand (LobjSPtr objPtr) {
+}*/
 
 LobjSPtr Env::procSpecialForm(LobjSPtr objPtr) {
 	Cons *cons = dynamic_cast<Cons*>(objPtr.get());

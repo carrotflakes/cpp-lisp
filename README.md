@@ -1,24 +1,32 @@
 # cpp-lisp
 Toy LISP implementation for c++0x.
 
+## Object types
+- Symbol
+- Cons
+- Int
+- Func
+- BuiltinFunc
+
 ## Special forms
 - `if`
 - `quote`
 - `setq`
-- `\` a.k.a. lambda.
+- `\` a.k.a. `lambda`.
 
 ## Built-in functions
 - `do` Evaluations all arguments sequentially and returns last evaluation value.
 - `+`
 - `-`
 - `*`
-- `=`
+- `=` Compares some Int values. If these values are equivalent mutually, it returns symbol `t`.
 - `<`
 - `print`
 - `car`
 - `cdr`
 - `cons`
 - `eval`
+- `read`
 
 ## Samples
 
