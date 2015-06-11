@@ -286,7 +286,8 @@ LobjSPtr readAux(Env &env, std::istream &is) {
 	char c = is.get();
 	if (c == '(') {
 		return readList(env, is);
-	} else if (('0' <= c && c <= '9') || (c == '-' && ('0' <= is.peek() && is.peek() <= '9'))) {
+	} else if (('0' <= c && c <= '9') ||
+						 (c == '-' && ('0' <= is.peek() && is.peek() <= '9'))) {
 		is.unget();
 		int value;
 		is >> value;
@@ -412,7 +413,8 @@ Env::Env() {
 	obj = intern("proc?");
 	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
 			if (args.size() != 1) throw "bad arguments for function 'nil'";
-			return boolToLobj(typeid(*args[0]) == typeid(Proc) || typeid(*args[0]) == typeid(BuiltinProc));
+			return boolToLobj(typeid(*args[0]) == typeid(Proc) ||
+												typeid(*args[0]) == typeid(BuiltinProc));
 		});
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
@@ -457,6 +459,33 @@ Env::Env() {
 				value *= dynamic_cast<Int*>(objPtr.get())->value;
 			}
 			return LobjSPtr(new Int(value));
+		});
+	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
+
+	obj = intern("/");
+	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
+			if (args.size() == 0 || typeid(*args[0]) != typeid(Int))
+				throw "bad arguments for function '/'";
+			int value = dynamic_cast<Int*>(args[0].get())->value;
+			for (int i = 1; i < args.size(); ++i) {
+				if (typeid(*args[i]) != typeid(Int)) throw "bad arguments for function '/'";
+				int divisor = dynamic_cast<Int*>(args[i].get())->value;
+				if (divisor == 0) throw "dividing by zero";
+				value /= divisor;
+			}
+			return LobjSPtr(new Int(value));
+		});
+	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
+
+	obj = intern("mod");
+	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
+			if (args.size() != 2 ||
+					typeid(*args[0]) != typeid(Int) || typeid(*args[1]) != typeid(Int))
+				throw "bad arguments for function 'mod'";
+			int value = dynamic_cast<Int*>(args[0].get())->value;
+			int divisor = dynamic_cast<Int*>(args[1].get())->value;
+			if (divisor == 0) throw "dividing by zero";
+			return LobjSPtr(new Int(value % divisor));
 		});
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
