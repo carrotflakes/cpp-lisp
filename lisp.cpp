@@ -398,6 +398,14 @@ Env::Env() {
 	});
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
+	obj = intern("eval");
+	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
+		if (args.size() != 1)
+			throw "bad arguments for function 'eval'";
+		return env.eval(args[0]);
+	});
+	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
+
 	obj = intern("exit");
 	bind(obj, dynamic_cast<Symbol*>(obj.get()));
 }
@@ -445,7 +453,9 @@ LobjSPtr Env::eval(LobjSPtr objPtr) {
 	//objPtr->print(std::cout); std::cout << " | ";
 	Lobj *o = objPtr.get();
 	if (typeid(*o) == typeid(Symbol)) {
-		return resolve(dynamic_cast<Symbol*>(o));
+		LobjSPtr rr = resolve(dynamic_cast<Symbol*>(o));
+		if (rr == nullptr) throw "evaluated unbound symbol";
+		return rr;
 	}
 	if (typeid(*o) == typeid(Int)) {
 		return objPtr;
@@ -495,7 +505,7 @@ int main() {
 	try {
 		env.repl();
 	} catch (char const *e) {
-		std::cout << "Error: " << e << std::endl;
+		std::cout << "Fatal error: " << e << std::endl;
 	}
 	return 0;
 }

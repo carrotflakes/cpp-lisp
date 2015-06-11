@@ -18,6 +18,7 @@ Toy LISP implementation for c++0x.
 - `car`
 - `cdr`
 - `cons`
+- `eval`
 
 ## Samples
 
@@ -29,4 +30,5 @@ Toy LISP implementation for c++0x.
          (+ (fib (- n 1)) (fib (- n 2)))
          n)))
 (print (fib 10))
+; 55
 ```
