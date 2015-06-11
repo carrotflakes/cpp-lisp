@@ -409,6 +409,15 @@ Env::Env() {
 	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
 		for (LobjSPtr &objPtr : args) {
 			objPtr->print(std::cout);
+		}
+		return intern("nil");
+	});
+	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
+
+	obj = intern("println");
+	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
+		for (LobjSPtr &objPtr : args) {
+			objPtr->print(std::cout);
 			std::cout << std::endl;
 		}
 		return intern("nil");

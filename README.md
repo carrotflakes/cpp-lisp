@@ -22,7 +22,8 @@ Toy LISP implementation for c++0x.
 - `*`
 - `=` Compares some Int values. If these values are equivalent mutually, it returns symbol `t`.
 - `<`
-- `print`
+- `print` Prints argument objects. No newline.
+- `println` Prints argument objects with newlines.
 - `car`
 - `cdr`
 - `cons`
@@ -38,6 +39,6 @@ Toy LISP implementation for c++0x.
      (if (< 1 n)
          (+ (fib (- n 1)) (fib (- n 2)))
          n)))
-(print (fib 10))
+(println (fib 10))
 ; 55
 ```
