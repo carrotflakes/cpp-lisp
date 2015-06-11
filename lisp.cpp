@@ -225,6 +225,9 @@ LobjSPtr readAux(Env &env, std::istream &is) {
 		int value;
 		is >> value;
 		return LobjSPtr(new Int(value));
+	} else if (c == ';') {
+		while (c != 0 && c != '\n' && c != '\r') c = is.get();
+		return readAux(env, is);
 	} else {
 		char symbolName[512];
 		int i = 0;

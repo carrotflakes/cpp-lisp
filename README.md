@@ -1,5 +1,5 @@
 # cpp-lisp
-Toy LISP implementation.
+Toy LISP implementation for c++0x.
 
 ## Special forms
 - `if`
@@ -18,3 +18,15 @@ Toy LISP implementation.
 - `car`
 - `cdr`
 - `cons`
+
+## Samples
+
+### Fibonacci
+```
+(setq fib
+  (\ (n)
+     (if (< 1 n)
+         (+ (fib (- n 1)) (fib (- n 2)))
+         n)))
+(print (fib 10))
+```
