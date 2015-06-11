@@ -366,7 +366,7 @@ Env::Env() {
 
 	obj = intern("*");
 	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
-		int value = 0;
+		int value = 1;
 		for (LobjSPtr &objPtr : args) {
 			if (typeid(*objPtr) != typeid(Int)) throw "bad arguments for function '*'";
 			value *= dynamic_cast<Int*>(objPtr.get())->value;
