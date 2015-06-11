@@ -13,6 +13,7 @@ Toy LISP implementation for c++0x.
 - `if`
 - `quote`
 - `set!`
+- `let` e.g. `(let (a 1 b 2) (+ a b))` => `3`
 - `\` a.k.a. `lambda`.
 
 ## Built-in functions
@@ -53,11 +54,25 @@ Toy LISP implementation for c++0x.
              (print "move " n " from " a " to " c "\n")
              (hanoi (- n 1) b c a)))))
 (hanoi 3 "towerA" "towerB" "towerC")
-;move 1 from towerA to towerC
-;move 2 from towerA to towerC
-;move 1 from towerB to towerA
-;move 3 from towerA to towerC
-;move 1 from towerB to towerA
-;move 2 from towerB to towerA
-;move 1 from towerC to towerB
+; move 1 from towerA to towerC
+; move 2 from towerA to towerC
+; move 1 from towerB to towerA
+; move 3 from towerA to towerC
+; move 1 from towerB to towerA
+; move 2 from towerB to towerA
+; move 1 from towerC to towerB
+```
+
+### Lexical scope
+```
+(set! count 10)
+(set! count-up
+	(let (count 0)
+     (\ () (set! count (+ count 1)) count)))
+(println (count-up) (count-up) (count-up))
+; 1
+; 2
+; 3
+(println count)
+; 10
 ```

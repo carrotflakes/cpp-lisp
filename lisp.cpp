@@ -6,14 +6,6 @@
 #include <map>
 #include <stdint.h>
 
-/*
-struct Symbol {
-	const std::string name;
-
-	Symbol(const std::string n)
-	: name(n) {}
-};*/
-
 class Env;
 
 struct Lobj {
@@ -26,25 +18,18 @@ struct Lobj {
 
 typedef std::shared_ptr<Lobj> LobjSPtr;
 typedef std::weak_ptr<Lobj>   LobjWPtr;
+typedef std::shared_ptr<Env> EnvSPtr;
+typedef std::weak_ptr<Env>   EnvWPtr;
 
 struct Cons : public Lobj {
 	LobjSPtr car;
 	LobjSPtr cdr;
-	
+
 	Cons(LobjSPtr a, LobjSPtr d)
 	: car(a), cdr(d) {}
 
 	void print(std::ostream &os) const;
 };
-/*
-struct SymbolRef : public Lobj {
-	Symbol *symbol;
-
-	SymbolRef(Symbol *s)
-	: symbol(s) {}
-
-	void print(std::ostream &os) const;
-};*/
 
 struct Symbol : public Lobj {
 	const std::string name;
@@ -74,20 +59,21 @@ struct String : public Lobj {
 };
 
 
-struct Func : public Lobj {
+struct Proc : public Lobj {
 	LobjSPtr parameterList;
 	LobjSPtr body;
+	EnvSPtr env;
 
-	Func (LobjSPtr pl, LobjSPtr b)
-	: parameterList(pl), body(b) {}
+	Proc (LobjSPtr pl, LobjSPtr b, EnvSPtr e)
+	: parameterList(pl), body(b), env(e) {}
 
 	void print(std::ostream &os) const;
 };
 
-struct BuiltinFunc : public Lobj {
+struct BuiltinProc : public Lobj {
 	std::function<LobjSPtr(Env &env, std::vector<LobjSPtr> &)> function;
 
-	BuiltinFunc (std::function<LobjSPtr(Env &env, std::vector<LobjSPtr> &)> f)
+	BuiltinProc (std::function<LobjSPtr(Env &env, std::vector<LobjSPtr> &)> f)
 	: function(f) {}
 
 	void print(std::ostream &os) const;
@@ -128,12 +114,12 @@ void String::print(std::ostream &os) const {
 	os << value;
 }
 
-void Func::print(std::ostream &os) const {
-	os << "#Func";
+void Proc::print(std::ostream &os) const {
+	os << "#Proc";
 }
 
-void BuiltinFunc::print(std::ostream &os) const {
-	os << "#BuiltinFunc";
+void BuiltinProc::print(std::ostream &os) const {
+	os << "#BuiltinProc";
 }
 
 bool Lobj::isNil() const {
@@ -157,23 +143,83 @@ LobjSPtr intern(std::string name) {
 }
 
 class Env {
-	Env *parent = nullptr;
+	EnvWPtr self;
+	EnvSPtr parent;
+	EnvSPtr lexEnv;
 	std::map<Symbol*, LobjSPtr> symbolValueMap;
 
-public:
 	Env();
+	Env(EnvSPtr p, EnvSPtr l)
+		: parent(p), lexEnv(l) {}
 
-	Env(Env *p)
-	: parent(p) {
+public:
+	static EnvSPtr makeEnv() {
+		EnvSPtr env(new Env());
+		env->self = env;
+		return env;
 	}
 
-	LobjSPtr resolve(Symbol *symbol) const {
+	static EnvSPtr makeInnerEnv(EnvSPtr p, EnvSPtr l = nullptr) {
+		EnvSPtr env(new Env(p, l));
+		env->self = env;
+		return env;
+	}
+
+	EnvSPtr rootEnv() const {
+		if (parent != nullptr)
+			return parent->rootEnv();
+		return EnvSPtr(self);
+	}
+
+	EnvSPtr resolveEnv(Symbol *symbol) const {
+		//		auto it = symbolValueMap.find(symbol);
+		if (symbolValueMap.count(symbol))
+			return EnvSPtr(self);
+		if (lexEnv != nullptr) {
+			EnvSPtr le = lexEnv->resolveEnvLex(symbol);
+			if (le != nullptr)
+				return le;
+			if (parent != nullptr)
+				return parent->resolveEnvDyn(symbol);
+			return EnvSPtr(nullptr);
+		}
+		if (parent != nullptr)
+			return parent->resolveEnv(symbol);
+		return EnvSPtr(nullptr);
+	}
+
+	EnvSPtr resolveEnvDyn(Symbol *symbol) const {
+		//auto it = symbolValueMap.find(symbol);
+		if (symbolValueMap.count(symbol))
+			return EnvSPtr(self);
+		if (parent != nullptr)
+			return parent->resolveEnvDyn(symbol);
+		return EnvSPtr(nullptr);
+	}
+
+	EnvSPtr resolveEnvLex(Symbol *symbol) const {
+		//auto it = symbolValueMap.find(symbol);
+		if (symbolValueMap.count(symbol))
+			return EnvSPtr(self);
+		if (lexEnv != nullptr)
+			return lexEnv->resolveEnvLex(symbol);
+		if (parent != nullptr)
+			return parent->resolveEnvLex(symbol);
+		return EnvSPtr(nullptr);
+	}
+
+
+	LobjSPtr resolve(Symbol *symbol) {
+		/*
 		auto it = symbolValueMap.find(symbol);
 		if (it != symbolValueMap.end())
 			return it->second;
 		if (parent != nullptr)
 			return parent->resolve(symbol);
-		return LobjSPtr(nullptr);
+		return LobjSPtr(nullptr);*/
+		EnvSPtr env = resolveEnv(symbol);
+		if (env == nullptr) return LobjSPtr(nullptr);
+		return env->symbolValueMap[symbol];
 	}
 
 	void bind(LobjSPtr objPtr, Symbol *symbol) {
@@ -189,17 +235,8 @@ public:
 
 	void repl() {
 		while (1) {
-			//print(eval(read(std::cin)));
 			LobjSPtr o = read(std::cin);
-			/*if (o != nullptr) {
-				o->print(std::cout);
-				std::cout << std::endl;
-			} else {
-				std::cout << "nil" << std::endl;
-				break;
-			}*/
-			if (eval(o) == intern("exit"))
-				break;
+			if (eval(o) == intern("exit")) break;
 		}
 	}
 };
@@ -314,17 +351,17 @@ LobjSPtr listNth(LobjSPtr &objptr, int i) {
 }
 
 LobjSPtr listNthCdr(LobjSPtr &objptr, int i) {
-	if (typeid(*objptr) != typeid(Cons))
-		return LobjSPtr(nullptr);
 	if (i == 0)
 		return objptr;
+	if (typeid(*objptr) != typeid(Cons))
+		return LobjSPtr(nullptr);
 	return listNthCdr(dynamic_cast<Cons*>(objptr.get())->cdr, i - 1);
 }
 
 
 Env::Env() {
 	LobjSPtr obj;
-	BuiltinFunc *bfunc;
+	BuiltinProc *bfunc;
 
 	obj = intern("t");
 	bind(obj, dynamic_cast<Symbol*>(obj.get()));
@@ -333,13 +370,14 @@ Env::Env() {
 	bind(obj, dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("do");
-	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
+	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
+			if (args.size() == 0) return intern("nil");
 			return args.back();
 		});
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("+");
-	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
+	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
 			int value = 0;
 			for (LobjSPtr &objPtr : args) {
 				if (typeid(*objPtr) != typeid(Int)) throw "bad arguments for function '+'";
@@ -350,7 +388,7 @@ Env::Env() {
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("-");
-	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
+	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
 			if (args.size() == 0 || typeid(*args[0]) != typeid(Int))
 				throw "bad arguments for function '-'";
 			int value = dynamic_cast<Int*>(args[0].get())->value;
@@ -365,7 +403,7 @@ Env::Env() {
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("*");
-	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
+	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
 			int value = 1;
 			for (LobjSPtr &objPtr : args) {
 				if (typeid(*objPtr) != typeid(Int)) throw "bad arguments for function '*'";
@@ -376,7 +414,7 @@ Env::Env() {
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("=");
-	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
+	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
 			if (args.size() == 0) throw "bad arguments for function '='";
 			for (LobjSPtr &objPtr : args) {
 				if (typeid(*objPtr) != typeid(Int)) throw "bad arguments for function '='";
@@ -391,7 +429,7 @@ Env::Env() {
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("<");
-	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
+	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
 			if (args.size() == 0) throw "bad arguments for function '<'";
 			for (LobjSPtr &objPtr : args) {
 				if (typeid(*objPtr) != typeid(Int)) throw "bad arguments for function '<'";
@@ -406,7 +444,7 @@ Env::Env() {
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("print");
-	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
+	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
 			for (LobjSPtr &objPtr : args) {
 				objPtr->print(std::cout);
 			}
@@ -415,7 +453,7 @@ Env::Env() {
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("println");
-	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
+	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
 			for (LobjSPtr &objPtr : args) {
 				objPtr->print(std::cout);
 				std::cout << std::endl;
@@ -425,7 +463,7 @@ Env::Env() {
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("print-to-string");
-	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
+	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
 			std::stringstream ss;
 			for (LobjSPtr &objPtr : args) {
 				objPtr->print(ss);
@@ -435,7 +473,7 @@ Env::Env() {
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("car");
-	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
+	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
 			if (args.size() != 1 || typeid(*args[0]) != typeid(Cons))
 				throw "bad arguments for function 'car'";
 			return dynamic_cast<Cons*>(args[0].get())->car;
@@ -443,7 +481,7 @@ Env::Env() {
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("cdr");
-	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
+	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
 			if (args.size() != 1 || typeid(*args[0]) != typeid(Cons))
 				throw "bad arguments for function 'cdr'";
 			return dynamic_cast<Cons*>(args[0].get())->cdr;
@@ -451,7 +489,7 @@ Env::Env() {
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("cons");
-	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
+	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
 		if (args.size() != 2)
 			throw "bad arguments for function 'cons'";
 		return LobjSPtr(new Cons(args[0], args[1]));
@@ -459,7 +497,7 @@ Env::Env() {
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("eval");
-	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
+	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
 		if (args.size() != 1)
 			throw "bad arguments for function 'eval'";
 		return env.eval(args[0]);
@@ -467,7 +505,7 @@ Env::Env() {
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
 	obj = intern("read");
-	bfunc = new BuiltinFunc([](Env &env, std::vector<LobjSPtr> &args) {
+	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
 		if (args.size() != 0)
 			throw "bad arguments for function 'read'";
 		return env.read(std::cin);
@@ -511,14 +549,34 @@ LobjSPtr Env::procSpecialForm(LobjSPtr objPtr) {
 			LobjSPtr variable = listNth(objPtr, 1);
 			if (typeid(*variable) != typeid(Symbol))
 				throw "bad set!";
-			bind(eval(listNth(objPtr, 2)), dynamic_cast<Symbol*>(variable.get()));
+			Symbol *symbol = dynamic_cast<Symbol*>(variable.get());
+			EnvSPtr env = resolveEnv(symbol);
+			if (env == nullptr) env = rootEnv();
+			env->bind(eval(listNth(objPtr, 2)), symbol);
 			return variable;
 		}
+	} else if (opName == "let") {
+		if (length < 2) throw "bad let";
+
+		LobjSPtr bindings = listNth(objPtr, 1);
+		if (!isProperList(bindings.get())) throw "bad let bindings";
+		if (listLength(bindings.get()) % 2 != 0) throw "number of bindings elements of let is odd.";
+		EnvSPtr env = makeInnerEnv(EnvSPtr(self));
+		while (!bindings->isNil()) {
+			LobjSPtr objSymbol = dynamic_cast<Cons*>(bindings.get())->car;
+			LobjSPtr objForm = dynamic_cast<Cons*>(dynamic_cast<Cons*>(bindings.get())->cdr.get())->car;
+			// TODO type check
+			Symbol *symbol = dynamic_cast<Symbol*>(objSymbol.get());
+			env->bind(eval(objForm), symbol);
+			bindings = listNthCdr(bindings, 2);
+		}
+		return env->eval(LobjSPtr(new Cons(intern("do"), listNthCdr(objPtr, 2))));
+
 	} else if (opName == "\\") {
 		if (2 <= length) {
 			LobjSPtr pl = listNth(objPtr, 1);
 			if (!isProperList(pl.get())) throw "bad lambda form";
-			return LobjSPtr(new Func(pl, LobjSPtr(new Cons(intern("do"), listNthCdr(objPtr, 2)))));
+			return LobjSPtr(new Proc(pl, LobjSPtr(new Cons(intern("do"), listNthCdr(objPtr, 2))), EnvSPtr(self)));
 		}
 	}
 	return LobjSPtr(nullptr);
@@ -546,23 +604,23 @@ LobjSPtr Env::eval(LobjSPtr objPtr) {
 
 		Cons *cons = dynamic_cast<Cons*>(o);
 		LobjSPtr opPtr = eval(cons->car);
-		if (typeid(*opPtr) == typeid(Func)) {
-			Func *func = dynamic_cast<Func*>(opPtr.get());
-			Env env(this);
+		if (typeid(*opPtr) == typeid(Proc)) {
+			Proc *func = dynamic_cast<Proc*>(opPtr.get());
+			EnvSPtr env = makeInnerEnv(EnvSPtr(self), func->env);
 			Lobj *prmCons = func->parameterList.get();
 			Lobj *argCons = cons->cdr.get();
 			if (!isProperList(argCons))
 				throw "bad function call";
 			while (!prmCons->isNil() && !argCons->isNil()) {
 				Symbol *symbol = dynamic_cast<Symbol*>(dynamic_cast<Cons*>(prmCons)->car.get());
-				env.bind(eval(dynamic_cast<Cons*>(argCons)->car), symbol);
+				env->bind(eval(dynamic_cast<Cons*>(argCons)->car), symbol);
 				prmCons = dynamic_cast<Cons*>(prmCons)->cdr.get();
 				argCons = dynamic_cast<Cons*>(argCons)->cdr.get();
 			}
-			return env.eval(func->body);
+			return env->eval(func->body);
 		}
-		if (typeid(*opPtr) == typeid(BuiltinFunc)) {
-			BuiltinFunc *bfunc = dynamic_cast<BuiltinFunc*>(opPtr.get());
+		if (typeid(*opPtr) == typeid(BuiltinProc)) {
+			BuiltinProc *bfunc = dynamic_cast<BuiltinProc*>(opPtr.get());
 			Lobj *argCons = cons->cdr.get();
 			if (!isProperList(argCons))
 				throw "bad built-in-function call";
@@ -579,9 +637,9 @@ LobjSPtr Env::eval(LobjSPtr objPtr) {
 }
 
 int main() {
-	Env env;
+	EnvSPtr env = Env::makeEnv();
 	try {
-		env.repl();
+		env->repl();
 	} catch (char const *e) {
 		std::cout << "Fatal error: " << e << std::endl;
 	}
