@@ -27,6 +27,8 @@ Toy LISP implementation for c++0x.
 - `+`
 - `-`
 - `*`
+- `/`
+- `mod`
 - `=` Compares some Int values. If these values are equivalent mutually, it returns symbol `t`.
 - `<`
 - `print` Prints argument objects. No newline.
@@ -51,6 +53,33 @@ Toy LISP implementation for c++0x.
 ; 55
 ```
 
+### Lexical scope
+```
+(set! count 10)
+(set! count-up
+	(let (count 0)
+     (\ () (set! count (+ count 1)) count)))
+(println (count-up) (count-up) (count-up))
+; 1
+; 2
+; 3
+(println count)
+; 10
+```
+
+### Reverse
+```
+(set! reverse*
+  (\ (list tsil)
+    (if (nil? list)
+        tsil
+				(reverse* (cdr list) (cons (car list) tsil)))))
+(set! reverse
+  (\ (list) (reverse* list ())))
+(set! list (quote (1 2 3 a b c)))
+(println list (reverse list))
+```
+
 ### Tower of Hanoi
 ```
 (set! hanoi
@@ -69,16 +98,3 @@ Toy LISP implementation for c++0x.
 ; move 1 from towerC to towerB
 ```
 
-### Lexical scope
-```
-(set! count 10)
-(set! count-up
-	(let (count 0)
-     (\ () (set! count (+ count 1)) count)))
-(println (count-up) (count-up) (count-up))
-; 1
-; 2
-; 3
-(println count)
-; 10
-```
