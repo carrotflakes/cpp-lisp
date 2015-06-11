@@ -64,6 +64,16 @@ struct Int : public Lobj {
 	void print(std::ostream &os) const;
 };
 
+struct String : public Lobj {
+	std::string value = 0;
+
+	String (const std::string &v)
+	: value(v) {}
+
+	void print(std::ostream &os) const;
+};
+
+
 struct Func : public Lobj {
 	LobjSPtr parameterList;
 	LobjSPtr body;
@@ -111,6 +121,10 @@ void Symbol::print(std::ostream &os) const {
 }
 
 void Int::print(std::ostream &os) const {
+	os << value;
+}
+
+void String::print(std::ostream &os) const {
 	os << value;
 }
 
@@ -216,6 +230,29 @@ LobjSPtr readList(Env &env, std::istream &is) {
 	}
 }
 
+LobjSPtr readString(Env &env, std::istream &is) {
+	char c = is.get();
+	std::stringstream ss;
+	while (c != '"') {
+		if (c == '\\') {
+			switch (is.get()) {
+			case 'n': c = '\n'; break;
+			case 'f': c = '\f'; break;
+			case 'b': c = '\b'; break;
+			case 'r': c = '\r'; break;
+			case 't': c = '\t'; break;
+			case '\'': c = '\''; break;
+			case '\"': c = '\"'; break;
+			case '\\': c = '\\'; break;
+			}
+		}
+		ss << c;
+		if (is.eof()) throw "parse failed";
+		c = is.get();
+	}
+	return LobjSPtr(new String(ss.str()));
+}
+
 LobjSPtr readAux(Env &env, std::istream &is) {
 	is >> std::ws;
 	if (is.eof()) throw "parse failed";
@@ -227,6 +264,8 @@ LobjSPtr readAux(Env &env, std::istream &is) {
 		int value;
 		is >> value;
 		return LobjSPtr(new Int(value));
+	} else if (c == '"') {
+		return readString(env, is);
 	} else if (c == ';') {
 		while (c != 0 && c != '\n' && c != '\r') c = is.get();
 		return readAux(env, is);
@@ -475,6 +514,9 @@ LobjSPtr Env::eval(LobjSPtr objPtr) {
 		return rr;
 	}
 	if (typeid(*o) == typeid(Int)) {
+		return objPtr;
+	}
+	if (typeid(*o) == typeid(String)) {
 		return objPtr;
 	}
 	if (typeid(*o) == typeid(Cons)) {
