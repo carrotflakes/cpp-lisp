@@ -6,8 +6,8 @@ Toy LISP implementation for c++0x.
 - Cons
 - Int
 - String
-- Func
-- BuiltinFunc
+- Proc
+- BuiltinProc
 
 ## Special forms
 - `if`
@@ -17,6 +17,12 @@ Toy LISP implementation for c++0x.
 - `\` a.k.a. `lambda`.
 
 ## Built-in functions
+- `nil?`
+- `list?`
+- `symbol?`
+- `int?`
+- `string?`
+- `proc?`
 - `do` Evaluations all arguments sequentially and returns last evaluation value.
 - `+`
 - `-`
