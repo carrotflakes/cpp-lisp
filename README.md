@@ -8,6 +8,7 @@ Toy LISP implementation for c++0x.
 - String
 - Proc
 - BuiltinProc
+- Macro
 
 ## Special forms
 - `if`
@@ -18,6 +19,7 @@ Toy LISP implementation for c++0x.
 - `macro` e.g. `(set! set-nil (macro (a) (cons (quote set!) (cons a (cons nil ()))))) (set-nil foo) (println foo)` => `nil`
 
 ## Built-in functions
+- `eq?`
 - `nil?`
 - `cons?`
 - `list?`
@@ -40,7 +42,8 @@ Toy LISP implementation for c++0x.
 - `cdr`
 - `cons`
 - `eval`
-- `read`
+- `read` Reads S-expression from standard input.
+- `load` Receives a file name as String and evaluates the lisp code in the file.
 
 ## Samples
 

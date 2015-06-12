@@ -13,7 +13,7 @@ struct Lobj {
 	virtual ~Lobj() {}
 
 	virtual void print(std::ostream &os) const = 0;
-
+	virtual bool eq(Lobj *obj) const;
 	bool isNil() const;
 };
 
@@ -48,6 +48,7 @@ struct Int : public Lobj {
 	: value(v) {}
 
 	void print(std::ostream &os) const;
+	bool eq(Lobj *obj) const;
 };
 
 struct String : public Lobj {
@@ -57,6 +58,7 @@ struct String : public Lobj {
 	: value(v) {}
 
 	void print(std::ostream &os) const;
+	bool eq(Lobj *obj) const;
 };
 
 
@@ -136,6 +138,18 @@ void BuiltinProc::print(std::ostream &os) const {
 
 void Macro::print(std::ostream &os) const {
 	os << "#Macro";
+}
+
+bool Lobj::eq(Lobj *obj) const {
+	return this == obj;
+}
+
+bool Int::eq(Lobj *obj) const {
+	return typeid(*obj) == typeid(Int) && value == static_cast<Int*>(obj)->value;
+}
+
+bool String::eq(Lobj *obj) const {
+	return typeid(*obj) == typeid(String) && value == static_cast<String*>(obj)->value;
 }
 
 bool Lobj::isNil() const {
@@ -449,7 +463,7 @@ Env::Env() {
 	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
 			if (args.size() == 0) throw "bad arguments for function 'eq?'";
 			for (int i = 0; i < args.size() - 1; ++i) {
-				if (args[i] != args[i+1])
+				if (!args[i]->eq(args[i+1].get()))
 					return intern("nil");
 			}
 			return intern("t");
