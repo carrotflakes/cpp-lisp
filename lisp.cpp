@@ -5,6 +5,7 @@
 #include <vector>
 #include <map>
 #include <stdint.h>
+#include <fstream>
 
 class Env;
 
@@ -79,6 +80,17 @@ struct BuiltinProc : public Lobj {
 	void print(std::ostream &os) const;
 };
 
+struct Macro : public Lobj {
+	LobjSPtr parameterList;
+	LobjSPtr body;
+	EnvSPtr env;
+
+	Macro (LobjSPtr pl, LobjSPtr b, EnvSPtr e)
+	: parameterList(pl), body(b), env(e) {}
+
+	void print(std::ostream &os) const;
+};
+
 
 void Cons::print(std::ostream &os) const {
 	os << "(";
@@ -120,6 +132,10 @@ void Proc::print(std::ostream &os) const {
 
 void BuiltinProc::print(std::ostream &os) const {
 	os << "#BuiltinProc";
+}
+
+void Macro::print(std::ostream &os) const {
+	os << "#Macro";
 }
 
 bool Lobj::isNil() const {
@@ -218,15 +234,26 @@ public:
 
 	LobjSPtr read(std::istream &is);
 
-	LobjSPtr macroexpand1 (LobjSPtr objPtr);
-	LobjSPtr macroexpand (LobjSPtr objPtr);
+	/*	LobjSPtr macroexpand1(LobjSPtr objPtr);
+	LobjSPtr macroexpand(LobjSPtr objPtr);	*/
+	LobjSPtr macroexpandRec(LobjSPtr objPtr);
+
 	LobjSPtr procSpecialForm(LobjSPtr objPtr);
 	LobjSPtr eval(LobjSPtr objPtr);
 
 	void repl() {
 		while (1) {
+			std::cout << "> ";
 			LobjSPtr o = read(std::cin);
-			if (eval(o) == intern("exit")) break;
+			if (o == nullptr) {
+				std::cout << std::endl << "Parse failed." << std::endl;
+				return;
+			}
+			o = macroexpandRec(o);
+			o = eval(o);
+			o->print(std::cout);
+			std::cout << std::endl;
+			if (o == intern("exit")) break;
 		}
 	}
 };
@@ -280,8 +307,17 @@ LobjSPtr readString(Env &env, std::istream &is) {
 	return LobjSPtr(new String(ss.str()));
 }
 
-LobjSPtr readAux(Env &env, std::istream &is) {
+void skipCommentOut(std::istream &is) {
 	is >> std::ws;
+	char c = is.peek();
+	while (c == ';') {
+		while (c != 0 && c != '\n' && c != '\r') c = is.get();
+		is >> std::ws;
+	}
+}
+
+LobjSPtr readAux(Env &env, std::istream &is) {
+	skipCommentOut(is);
 	if (is.eof()) throw "parse failed";
 	char c = is.get();
 	if (c == '(') {
@@ -294,9 +330,6 @@ LobjSPtr readAux(Env &env, std::istream &is) {
 		return LobjSPtr(new Int(value));
 	} else if (c == '"') {
 		return readString(env, is);
-	} else if (c == ';') {
-		while (c != 0 && c != '\n' && c != '\r') c = is.get();
-		return readAux(env, is);
 	} else {
 		char symbolName[512];
 		int i = 0;
@@ -318,6 +351,8 @@ LobjSPtr Env::read(std::istream &is) {
 		return LobjSPtr(nullptr);
 	}
 }
+
+// TODO LobjSPtr lastCdrObj(LobjSPtr objPtr) {
 
 bool isProperList(Lobj *obj) {
 	if (typeid(*obj) == typeid(Cons))
@@ -349,8 +384,54 @@ LobjSPtr listNthCdr(LobjSPtr &objptr, int i) {
 	return listNthCdr(dynamic_cast<Cons*>(objptr.get())->cdr, i - 1);
 }
 
+LobjSPtr map(LobjSPtr objPtr, std::function<LobjSPtr(LobjSPtr)> func) {
+	if (typeid(*objPtr) != typeid(Cons))
+		return objPtr;
+	Cons *cons = dynamic_cast<Cons*>(objPtr.get());
+	return LobjSPtr(new Cons(func(cons->car), map(cons->cdr, func)));
+}
+
 LobjSPtr boolToLobj(bool b) {
 	return intern(b ? "t" : "nil");
+}
+
+LobjSPtr evalListElements(EnvSPtr env, LobjSPtr objPtr) {
+	if (typeid(*objPtr) != typeid(Cons)) return objPtr;
+	Cons *cons = dynamic_cast<Cons*>(objPtr.get());
+	return LobjSPtr(new Cons(env->eval(cons->car), evalListElements(env, cons->cdr)));
+}
+
+EnvSPtr makeEnvForMacro(EnvSPtr parentEnv, EnvSPtr procEnv, LobjSPtr prms, LobjSPtr args) {
+	EnvSPtr env = parentEnv->makeInnerEnv(parentEnv, procEnv);
+	if (!isProperList(args.get()))
+		throw "bad macro apply";
+	while (typeid(*prms) == typeid(Cons) && typeid(*args) == typeid(Cons)) {
+		Symbol *symbol = dynamic_cast<Symbol*>(dynamic_cast<Cons*>(prms.get())->car.get());
+		env->bind(dynamic_cast<Cons*>(args.get())->car, symbol);
+		prms = dynamic_cast<Cons*>(prms.get())->cdr;
+		args = dynamic_cast<Cons*>(args.get())->cdr;
+	}
+	if (typeid(*prms) == typeid(Symbol) && !prms->isNil()) {
+		env->bind(args, dynamic_cast<Symbol*>(prms.get()));
+	}
+	return env;
+}
+
+EnvSPtr makeEnvForApply(EnvSPtr parentEnv, EnvSPtr procEnv, LobjSPtr prms, LobjSPtr args) {
+	EnvSPtr env = parentEnv->makeInnerEnv(parentEnv, procEnv);
+	if (!isProperList(args.get()))
+		throw "bad apply";
+	while (typeid(*prms) == typeid(Cons) && typeid(*args) == typeid(Cons)) {
+		Symbol *symbol = dynamic_cast<Symbol*>(dynamic_cast<Cons*>(prms.get())->car.get());
+		env->bind(parentEnv->eval(dynamic_cast<Cons*>(args.get())->car), symbol);
+		prms = dynamic_cast<Cons*>(prms.get())->cdr;
+		args = dynamic_cast<Cons*>(args.get())->cdr;
+	}
+	if (typeid(*prms) == typeid(Symbol) && !prms->isNil()) {
+		LobjSPtr rest = evalListElements(parentEnv, args);
+		env->bind(rest, dynamic_cast<Symbol*>(prms.get()));
+	}
+	return env;
 }
 
 
@@ -379,6 +460,13 @@ Env::Env() {
 	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
 			if (args.size() != 1) throw "bad arguments for function 'nil'";
 			return boolToLobj(args[0]->isNil());
+		});
+	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
+
+	obj = intern("cons?");
+	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
+			if (args.size() != 1) throw "bad arguments for function 'nil'";
+			return boolToLobj(typeid(*args[0]) == typeid(Cons));
 		});
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
@@ -588,6 +676,36 @@ Env::Env() {
 	});
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
+	obj = intern("load");
+	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
+			if (args.size() != 1 || typeid(*args[0]) != typeid(String))
+				throw "bad arguments for function 'load'";
+			std::string filename = dynamic_cast<String*>(args[0].get())->value;
+			std::ifstream ifs(filename);
+			if (ifs.fail()) return intern("nil");
+			try {
+				while (!ifs.eof()) {
+					LobjSPtr o = env.read(ifs);
+					o = env.macroexpandRec(o);
+					env.eval(o);
+					skipCommentOut(ifs);
+				}
+			} catch (char const *e) {
+				std::cout << std::endl << "Parse failed." << std::endl;
+				return intern("nil");
+			}
+			return intern("t");
+	});
+	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
+
+	obj = intern("macroexpand-rec");
+	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
+		if (args.size() != 1)
+			throw "bad arguments for function 'macroexpand-rec'";
+		return env.macroexpandRec(args[0]);
+	});
+	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
+
 	obj = intern("exit");
 	bind(obj, dynamic_cast<Symbol*>(obj.get()));
 }
@@ -598,6 +716,33 @@ LobjSPtr Env::macroexpand1 (LobjSPtr objPtr) {
 
 LobjSPtr Env::macroexpand (LobjSPtr objPtr) {
 }*/
+
+LobjSPtr Env::macroexpandRec(LobjSPtr objPtr) {
+	if (typeid(*objPtr) != typeid(Cons))
+		return objPtr;
+	Cons *cons = dynamic_cast<Cons*>(objPtr.get());
+	if (typeid(*cons->car) == typeid(Symbol)) {
+		Symbol *opSymbol = dynamic_cast<Symbol*>(cons->car.get());
+		// special form
+		// TODO quote set! let \ macro
+		if (opSymbol->name == "quote") {
+			return objPtr;
+		}
+		//if (opSymbol->name == "set!") {
+		//}
+		LobjSPtr op = resolve(opSymbol);
+		//macro
+		if (op != nullptr && typeid(*op) == typeid(Macro)) {
+			Macro *macro = dynamic_cast<Macro*>(op.get());
+			EnvSPtr env = makeEnvForMacro(EnvSPtr(self), macro->env,
+																		macro->parameterList, cons->cdr);
+			return macroexpandRec(env->eval(macro->body));
+		}
+	}
+	return map(objPtr, [this](LobjSPtr objPtr) {
+			return this->macroexpandRec(objPtr);
+		});
+}
 
 LobjSPtr Env::procSpecialForm(LobjSPtr objPtr) {
 	Cons *cons = dynamic_cast<Cons*>(objPtr.get());
@@ -651,8 +796,14 @@ LobjSPtr Env::procSpecialForm(LobjSPtr objPtr) {
 	} else if (opName == "\\") {
 		if (2 <= length) {
 			LobjSPtr pl = listNth(objPtr, 1);
-			if (!isProperList(pl.get())) throw "bad lambda form";
+			//if (!isProperList(pl.get())) throw "bad lambda form";
 			return LobjSPtr(new Proc(pl, LobjSPtr(new Cons(intern("do"), listNthCdr(objPtr, 2))), EnvSPtr(self)));
+		}
+	} else if (opName == "macro") {
+		if (2 <= length) {
+			LobjSPtr pl = listNth(objPtr, 1);
+			//if (!isProperList(pl.get())) throw "bad lambda form";
+			return LobjSPtr(new Macro(pl, LobjSPtr(new Cons(intern("do"), listNthCdr(objPtr, 2))), EnvSPtr(self)));
 		}
 	}
 	return LobjSPtr(nullptr);
@@ -663,7 +814,10 @@ LobjSPtr Env::eval(LobjSPtr objPtr) {
 	Lobj *o = objPtr.get();
 	if (typeid(*o) == typeid(Symbol)) {
 		LobjSPtr rr = resolve(dynamic_cast<Symbol*>(o));
-		if (rr == nullptr) throw "evaluated unbound symbol";
+		if (rr == nullptr) {
+			std::cout << "unbound symbol: " << dynamic_cast<Symbol*>(o)->name << std::endl;
+			throw "evaluated unbound symbol";
+		}
 		return rr;
 	}
 	if (typeid(*o) == typeid(Int)) {
@@ -682,17 +836,8 @@ LobjSPtr Env::eval(LobjSPtr objPtr) {
 		LobjSPtr opPtr = eval(cons->car);
 		if (typeid(*opPtr) == typeid(Proc)) {
 			Proc *func = dynamic_cast<Proc*>(opPtr.get());
-			EnvSPtr env = makeInnerEnv(EnvSPtr(self), func->env);
-			Lobj *prmCons = func->parameterList.get();
-			Lobj *argCons = cons->cdr.get();
-			if (!isProperList(argCons))
-				throw "bad function call";
-			while (!prmCons->isNil() && !argCons->isNil()) {
-				Symbol *symbol = dynamic_cast<Symbol*>(dynamic_cast<Cons*>(prmCons)->car.get());
-				env->bind(eval(dynamic_cast<Cons*>(argCons)->car), symbol);
-				prmCons = dynamic_cast<Cons*>(prmCons)->cdr.get();
-				argCons = dynamic_cast<Cons*>(argCons)->cdr.get();
-			}
+			EnvSPtr env = makeEnvForApply(EnvSPtr(self), func->env,
+																		func->parameterList, cons->cdr);
 			return env->eval(func->body);
 		}
 		if (typeid(*opPtr) == typeid(BuiltinProc)) {

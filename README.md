@@ -15,9 +15,11 @@ Toy LISP implementation for c++0x.
 - `set!`
 - `let` e.g. `(let (a 1 b 2) (+ a b))` => `3`
 - `\` a.k.a. `lambda`.
+- `macro` e.g. `(set! set-nil (macro (a) (cons (quote set!) (cons a (cons nil ()))))) (set-nil foo) (println foo)` => `nil`
 
 ## Built-in functions
 - `nil?`
+- `cons?`
 - `list?`
 - `symbol?`
 - `int?`
