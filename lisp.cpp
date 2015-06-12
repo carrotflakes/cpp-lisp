@@ -1,6 +1,6 @@
 #include <iostream>
-#include <string>
 #include <sstream>
+#include <string>
 #include <memory>
 #include <vector>
 #include <map>
@@ -327,6 +327,7 @@ void skipCommentOut(std::istream &is) {
 	while (c == ';') {
 		while (c != 0 && c != '\n' && c != '\r') c = is.get();
 		is >> std::ws;
+		c = is.peek();
 	}
 }
 
@@ -871,8 +872,15 @@ LobjSPtr Env::eval(LobjSPtr objPtr) {
 	return objPtr;
 }
 
+std::string initializeCode = "(println \"Loding core file...\" (load \"core.lisp\"))";
+
 int main() {
 	EnvSPtr env = Env::makeEnv();
+
+	std::istringstream ss(initializeCode);
+	LobjSPtr objPtr = env->read(ss);
+	env->eval(env->macroexpandRec(objPtr));
+
 	try {
 		env->repl();
 	} catch (char const *e) {
