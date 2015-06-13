@@ -44,6 +44,7 @@ Toy LISP implementation for c++0x.
 - `eval`
 - `read` Reads S-expression from standard input.
 - `load` Receives a file name as String and evaluates the lisp code in the file.
+- `macroexpand-all`
 
 ## Samples
 
@@ -101,5 +102,18 @@ Toy LISP implementation for c++0x.
 ; move 1 from towerB to towerA
 ; move 2 from towerB to towerA
 ; move 1 from towerC to towerB
+```
+
+### FizzBuzz
+```
+(set! fizz-buzz
+  (\ (n)
+    (when (< 0 n)
+      (do (fizz-buzz (- n 1))
+          (println (cond
+                     ((= (mod n 15) 0) "FizzBuzz")
+										 ((= (mod n 3)  0) "Fizz")
+										 ((= (mod n 5)  0) "Buzz")
+										 (t                n)))))))
 ```
 

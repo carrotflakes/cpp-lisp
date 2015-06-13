@@ -250,7 +250,7 @@ public:
 
 	/*	LobjSPtr macroexpand1(LobjSPtr objPtr);
 	LobjSPtr macroexpand(LobjSPtr objPtr);	*/
-	LobjSPtr macroexpandRec(LobjSPtr objPtr);
+	LobjSPtr macroexpandAll(LobjSPtr objPtr);
 
 	LobjSPtr procSpecialForm(LobjSPtr objPtr);
 	LobjSPtr eval(LobjSPtr objPtr);
@@ -263,7 +263,7 @@ public:
 				std::cout << std::endl << "Parse failed." << std::endl;
 				return;
 			}
-			o = macroexpandRec(o);
+			o = macroexpandAll(o);
 			o = eval(o);
 			o->print(std::cout);
 			std::cout << std::endl;
@@ -701,7 +701,7 @@ Env::Env() {
 			try {
 				while (!ifs.eof()) {
 					LobjSPtr o = env.read(ifs);
-					o = env.macroexpandRec(o);
+					o = env.macroexpandAll(o);
 					env.eval(o);
 					skipCommentOut(ifs);
 				}
@@ -713,11 +713,11 @@ Env::Env() {
 	});
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
-	obj = intern("macroexpand-rec");
+	obj = intern("macroexpand-all");
 	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
 		if (args.size() != 1)
-			throw "bad arguments for function 'macroexpand-rec'";
-		return env.macroexpandRec(args[0]);
+			throw "bad arguments for function 'macroexpand-all'";
+		return env.macroexpandAll(args[0]);
 	});
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
@@ -732,7 +732,7 @@ LobjSPtr Env::macroexpand1 (LobjSPtr objPtr) {
 LobjSPtr Env::macroexpand (LobjSPtr objPtr) {
 }*/
 
-LobjSPtr Env::macroexpandRec(LobjSPtr objPtr) {
+LobjSPtr Env::macroexpandAll(LobjSPtr objPtr) {
 	if (typeid(*objPtr) != typeid(Cons))
 		return objPtr;
 	Cons *cons = dynamic_cast<Cons*>(objPtr.get());
@@ -751,11 +751,11 @@ LobjSPtr Env::macroexpandRec(LobjSPtr objPtr) {
 			Macro *macro = dynamic_cast<Macro*>(op.get());
 			EnvSPtr env = makeEnvForMacro(EnvSPtr(self), macro->env,
 																		macro->parameterList, cons->cdr);
-			return macroexpandRec(env->eval(macro->body));
+			return macroexpandAll(env->eval(macro->body));
 		}
 	}
 	return map(objPtr, [this](LobjSPtr objPtr) {
-			return this->macroexpandRec(objPtr);
+			return this->macroexpandAll(objPtr);
 		});
 }
 
@@ -879,7 +879,7 @@ int main() {
 
 	std::istringstream ss(initializeCode);
 	LobjSPtr objPtr = env->read(ss);
-	env->eval(env->macroexpandRec(objPtr));
+	env->eval(env->macroexpandAll(objPtr));
 
 	try {
 		env->repl();
