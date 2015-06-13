@@ -13,7 +13,8 @@ Toy LISP implementation for c++0x.
 ## Special forms
 - `if`
 - `quote`
-- `set!`
+- `def` Creates a variable binding on global. e.g. `(def first (\ (list) (car list)))`
+- `set!` Rebinds a variable to a value.
 - `let` e.g. `(let (a 1 b 2) (+ a b))` => `3`
 - `\` a.k.a. `lambda`.
 - `macro` e.g. `(set! set-nil (macro (a) (cons (quote set!) (cons a (cons nil ()))))) (set-nil foo) (println foo)` => `nil`
@@ -112,8 +113,7 @@ Toy LISP implementation for c++0x.
       (do (fizz-buzz (- n 1))
           (println (cond
                      ((= (mod n 15) 0) "FizzBuzz")
-										 ((= (mod n 3)  0) "Fizz")
-										 ((= (mod n 5)  0) "Buzz")
-										 (t                n)))))))
+                     ((= (mod n 3)  0) "Fizz")
+                     ((= (mod n 5)  0) "Buzz")
+                     (t                n)))))))
 ```
-

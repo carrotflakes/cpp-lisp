@@ -158,6 +158,7 @@ bool Lobj::isNil() const {
 }
 
 
+int gensymId = 0;
 std::map<std::string, LobjSPtr> symbolMap;
 
 LobjSPtr intern(std::string name) {
@@ -174,13 +175,13 @@ LobjSPtr intern(std::string name) {
 
 class Env {
 	EnvWPtr self;
-	EnvSPtr parent;
+	EnvSPtr outerEnv;
 	EnvSPtr lexEnv;
 	std::map<Symbol*, LobjSPtr> symbolValueMap;
 
 	Env();
-	Env(EnvSPtr p, EnvSPtr l)
-		: parent(p), lexEnv(l) {}
+	Env(EnvSPtr e, EnvSPtr l)
+		: outerEnv(e), lexEnv(l) {}
 
 public:
 	static EnvSPtr makeEnv() {
@@ -196,8 +197,8 @@ public:
 	}
 
 	EnvSPtr rootEnv() const {
-		if (parent != nullptr)
-			return parent->rootEnv();
+		if (outerEnv != nullptr)
+			return outerEnv->rootEnv();
 		return EnvSPtr(self);
 	}
 
@@ -208,20 +209,20 @@ public:
 			EnvSPtr le = lexEnv->resolveEnvLex(symbol);
 			if (le != nullptr)
 				return le;
-			if (parent != nullptr)
-				return parent->resolveEnvDyn(symbol);
+			if (outerEnv != nullptr)
+				return outerEnv->resolveEnvDyn(symbol);
 			return EnvSPtr(nullptr);
 		}
-		if (parent != nullptr)
-			return parent->resolveEnv(symbol);
+		if (outerEnv != nullptr)
+			return outerEnv->resolveEnv(symbol);
 		return EnvSPtr(nullptr);
 	}
 
 	EnvSPtr resolveEnvDyn(Symbol *symbol) const {
 		if (symbolValueMap.count(symbol))
 			return EnvSPtr(self);
-		if (parent != nullptr)
-			return parent->resolveEnvDyn(symbol);
+		if (outerEnv != nullptr)
+			return outerEnv->resolveEnvDyn(symbol);
 		return EnvSPtr(nullptr);
 	}
 
@@ -230,8 +231,8 @@ public:
 			return EnvSPtr(self);
 		if (lexEnv != nullptr)
 			return lexEnv->resolveEnvLex(symbol);
-		if (parent != nullptr)
-			return parent->resolveEnvLex(symbol);
+		if (outerEnv != nullptr)
+			return outerEnv->resolveEnvLex(symbol);
 		return EnvSPtr(nullptr);
 	}
 
@@ -416,8 +417,8 @@ LobjSPtr evalListElements(EnvSPtr env, LobjSPtr objPtr) {
 	return LobjSPtr(new Cons(env->eval(cons->car), evalListElements(env, cons->cdr)));
 }
 
-EnvSPtr makeEnvForMacro(EnvSPtr parentEnv, EnvSPtr procEnv, LobjSPtr prms, LobjSPtr args) {
-	EnvSPtr env = parentEnv->makeInnerEnv(parentEnv, procEnv);
+EnvSPtr makeEnvForMacro(EnvSPtr outerEnv, EnvSPtr procEnv, LobjSPtr prms, LobjSPtr args) {
+	EnvSPtr env = outerEnv->makeInnerEnv(outerEnv, procEnv);
 	if (!isProperList(args.get()))
 		throw "bad macro apply";
 	while (typeid(*prms) == typeid(Cons) && typeid(*args) == typeid(Cons)) {
@@ -432,18 +433,18 @@ EnvSPtr makeEnvForMacro(EnvSPtr parentEnv, EnvSPtr procEnv, LobjSPtr prms, LobjS
 	return env;
 }
 
-EnvSPtr makeEnvForApply(EnvSPtr parentEnv, EnvSPtr procEnv, LobjSPtr prms, LobjSPtr args) {
-	EnvSPtr env = parentEnv->makeInnerEnv(parentEnv, procEnv);
+EnvSPtr makeEnvForApply(EnvSPtr outerEnv, EnvSPtr procEnv, LobjSPtr prms, LobjSPtr args) {
+	EnvSPtr env = outerEnv->makeInnerEnv(outerEnv, procEnv);
 	if (!isProperList(args.get()))
 		throw "bad apply";
 	while (typeid(*prms) == typeid(Cons) && typeid(*args) == typeid(Cons)) {
 		Symbol *symbol = dynamic_cast<Symbol*>(dynamic_cast<Cons*>(prms.get())->car.get());
-		env->bind(parentEnv->eval(dynamic_cast<Cons*>(args.get())->car), symbol);
+		env->bind(outerEnv->eval(dynamic_cast<Cons*>(args.get())->car), symbol);
 		prms = dynamic_cast<Cons*>(prms.get())->cdr;
 		args = dynamic_cast<Cons*>(args.get())->cdr;
 	}
 	if (typeid(*prms) == typeid(Symbol) && !prms->isNil()) {
-		LobjSPtr rest = evalListElements(parentEnv, args);
+		LobjSPtr rest = evalListElements(outerEnv, args);
 		env->bind(rest, dynamic_cast<Symbol*>(prms.get()));
 	}
 	return env;
@@ -675,6 +676,20 @@ Env::Env() {
 	});
 	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
 
+	obj = intern("gensym");
+	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
+			std::stringstream ss;
+			if (args.size() == 0) {
+				ss << "#g" << (gensymId++);
+			} else if (args.size() == 1 && typeid(*args[0]) == typeid(String)) {
+				ss << "#" << (static_cast<String*>(args[0].get())->value) << (gensymId++);
+			} else {
+				throw "bad arguments for function 'gensym'";
+			}
+			return LobjSPtr(new Symbol(ss.str()));
+	});
+	bind(LobjSPtr(bfunc), dynamic_cast<Symbol*>(obj.get()));
+
 	obj = intern("eval");
 	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
 		if (args.size() != 1)
@@ -780,11 +795,21 @@ LobjSPtr Env::procSpecialForm(LobjSPtr objPtr) {
 	} else if (opName == "quote") {
 		if (length == 2)
 			return listNth(objPtr, 1);
+	} else if (opName == "def") {
+		if (length == 3) {
+			LobjSPtr variable = listNth(objPtr, 1);
+			if (typeid(*variable) != typeid(Symbol))
+				throw "bad 'def'";
+			Symbol *symbol = dynamic_cast<Symbol*>(variable.get());
+			EnvSPtr env = rootEnv();
+			env->bind(eval(listNth(objPtr, 2)), symbol);
+			return variable;
+		}
 	} else if (opName == "set!") {
 		if (length == 3) {
 			LobjSPtr variable = listNth(objPtr, 1);
 			if (typeid(*variable) != typeid(Symbol))
-				throw "bad set!";
+				throw "bad 'set!'";
 			Symbol *symbol = dynamic_cast<Symbol*>(variable.get());
 			EnvSPtr env = resolveEnv(symbol);
 			if (env == nullptr) env = rootEnv();
