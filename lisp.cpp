@@ -12,6 +12,16 @@ class Env;
 struct Lobj {
 	virtual ~Lobj() {}
 
+	template<typename T> bool typep() const {
+		return typeid(*this) == typeid(T);
+	}
+	template<typename T> T &getAs() {
+		return *static_cast<T*>(this);
+	}
+	template<typename T> const T &getAs() const {
+		return *static_cast<const T*>(this);
+	}
+
 	virtual void print(std::ostream &os) const = 0;
 	virtual bool eq(Lobj *obj) const;
 	bool isNil() const;
@@ -42,7 +52,7 @@ struct Symbol : public Lobj {
 };
 
 struct Int : public Lobj {
-	int value = 0;
+	int value;
 
 	Int (int v)
 	: value(v) {}
@@ -52,7 +62,7 @@ struct Int : public Lobj {
 };
 
 struct String : public Lobj {
-	std::string value = 0;
+	std::string value;
 
 	String (const std::string &v)
 	: value(v) {}
@@ -99,13 +109,12 @@ void Cons::print(std::ostream &os) const {
 	car->print(os);
 	Lobj *o = this->cdr.get();
 	while (1) {
-		if (typeid(*o) == typeid(Cons)) {
+		if (o->typep<Cons>()) {
 			os << " ";
-			Cons *cons = dynamic_cast<Cons*>(o);
+			Cons *cons = &o->getAs<Cons>();
 			cons->car->print(os);
 			o = cons->cdr.get();
-		} else if (typeid(*o) == typeid(Symbol) &&
-				dynamic_cast<Symbol*>(o)->name == "nil") {
+		} else if (o->typep<Symbol>() && o->getAs<Symbol>().name == "nil") {
 			break;
 		} else {
 			os << " . ";
@@ -145,16 +154,16 @@ bool Lobj::eq(Lobj *obj) const {
 }
 
 bool Int::eq(Lobj *obj) const {
-	return typeid(*obj) == typeid(Int) && value == static_cast<Int*>(obj)->value;
+	return typeid(*obj) == typeid(Int) && value == obj->getAs<Int>().value;
 }
 
 bool String::eq(Lobj *obj) const {
-	return typeid(*obj) == typeid(String) && value == static_cast<String*>(obj)->value;
+	return typeid(*obj) == typeid(String) && value == obj->getAs<String>().value;
 }
 
 bool Lobj::isNil() const {
 	return typeid(*this) == typeid(Symbol) &&
-		dynamic_cast<const Symbol*>(this)->name == "nil";
+		this->getAs<Symbol>().name == "nil";
 }
 
 
@@ -235,7 +244,6 @@ public:
 			return outerEnv->resolveEnvLex(symbol);
 		return EnvSPtr(nullptr);
 	}
-
 
 	LobjSPtr resolve(Symbol *symbol) {
 		EnvSPtr env = resolveEnv(symbol);
@@ -813,8 +821,9 @@ LobjSPtr Env::procSpecialForm(LobjSPtr objPtr) {
 			Symbol *symbol = dynamic_cast<Symbol*>(variable.get());
 			EnvSPtr env = resolveEnv(symbol);
 			if (env == nullptr) env = rootEnv();
-			env->bind(eval(listNth(objPtr, 2)), symbol);
-			return variable;
+			LobjSPtr value = eval(listNth(objPtr, 2));
+			env->bind(value, symbol);
+			return value;
 		}
 	} else if (opName == "let") {
 		if (length < 2) throw "bad let";
