@@ -42,6 +42,8 @@ Toy LISP implementation for c++0x.
 - `car`
 - `cdr`
 - `cons`
+- `gensym`
+- `bound?`
 - `eval`
 - `read` Reads S-expression from standard input.
 - `load` Receives a file name as String and evaluates the lisp code in the file.
