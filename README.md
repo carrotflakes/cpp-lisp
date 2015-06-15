@@ -12,10 +12,12 @@ Toy LISP implementation for c++0x.
 
 ## Special forms
 - `if`
+- `do` Evaluations all arguments sequentially and returns last evaluation value.
 - `quote`
 - `def` Creates a variable binding on global. e.g. `(def first (\ (list) (car list)))`
 - `set!` Rebinds a variable to a value.
 - `let` e.g. `(let (a 1 b 2) (+ a b))` => `3`
+- `let*`
 - `\` a.k.a. `lambda`.
 - `macro` e.g. `(set! set-nil (macro (a) (cons (quote set!) (cons a (cons nil ()))))) (set-nil foo) (println foo)` => `nil`
 
@@ -28,7 +30,6 @@ Toy LISP implementation for c++0x.
 - `int?`
 - `string?`
 - `proc?`
-- `do` Evaluations all arguments sequentially and returns last evaluation value.
 - `+`
 - `-`
 - `*`
@@ -49,11 +50,15 @@ Toy LISP implementation for c++0x.
 - `load` Receives a file name as String and evaluates the lisp code in the file.
 - `macroexpand-all`
 
+## Standard functions and macros
+User can use some functions and macros immediately on LISP start. These are defined in `core.lisp` file.
+
+
 ## Samples
 
 ### Fibonacci
 ```
-(set! fib
+(def fib
   (\ (n)
      (if (< 1 n)
          (+ (fib (- n 1)) (fib (- n 2)))
@@ -62,12 +67,12 @@ Toy LISP implementation for c++0x.
 ; 55
 ```
 
-### Lexical scope
+### Lexical scope and closure
 ```
-(set! count 10)
-(set! count-up
-	(let (count 0)
-     (\ () (set! count (+ count 1)) count)))
+(def count 10)
+(def count-up
+	   (let (count 0)
+          (\ () (set! count (+ count 1)) count)))
 (println (count-up) (count-up) (count-up))
 ; 1
 ; 2
@@ -76,17 +81,25 @@ Toy LISP implementation for c++0x.
 ; 10
 ```
 
-### Reverse
+### Dynamic scope
 ```
-(set! reverse*
-  (\ (list tsil)
-    (if (nil? list)
-        tsil
-				(reverse* (cdr list) (cons (car list) tsil)))))
-(set! reverse
-  (\ (list) (reverse* list ())))
-(set! list (quote (1 2 3 a b c)))
-(println list (reverse list))
+(def count 10)
+(def count-up
+     (\ () (set! count (+ count 1)) count))
+(println (count-up) (count-up) (count-up))
+; 11
+; 12
+; 13
+(let (count 0)
+		 (println (count-up) (count-up) (count-up)))
+; 1
+; 2
+; 3
+```
+
+### Variadic function
+```
+(def my-list (\ xs xs))
 ```
 
 ### Tower of Hanoi
