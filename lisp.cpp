@@ -857,7 +857,22 @@ LobjSPtr Env::procSpecialForm(LobjSPtr objPtr) {
 			bindings = listNthCdr(bindings, 2);
 		}
 		return env->eval(LobjSPtr(new Cons(intern("do"), listNthCdr(objPtr, 2))));
+	} else if (opName == "let*") {
+		if (length < 2) throw "bad let*";
 
+		LobjSPtr bindings = listNth(objPtr, 1);
+		if (!isProperList(bindings.get())) throw "bad let* bindings";
+		if (listLength(bindings.get()) % 2 != 0) throw "number of bindings elements of let* is odd.";
+		EnvSPtr env = makeInnerEnv(EnvSPtr(self));
+		while (!bindings->isNil()) {
+			LobjSPtr objSymbol = dynamic_cast<Cons*>(bindings.get())->car;
+			LobjSPtr objForm = dynamic_cast<Cons*>(dynamic_cast<Cons*>(bindings.get())->cdr.get())->car;
+			// TODO type check
+			Symbol *symbol = dynamic_cast<Symbol*>(objSymbol.get());
+			env->bind(env->eval(objForm), symbol);
+			bindings = listNthCdr(bindings, 2);
+		}
+		return env->eval(LobjSPtr(new Cons(intern("do"), listNthCdr(objPtr, 2))));
 	} else if (opName == "\\") {
 		if (2 <= length) {
 			LobjSPtr pl = listNth(objPtr, 1);
