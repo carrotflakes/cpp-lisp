@@ -530,12 +530,13 @@ Env::Env() {
 		});
 	bind(LobjSPtr(bfunc), &obj->getAs<Symbol>());
 
+	/*
 	obj = intern("do");
 	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
 			if (args.size() == 0) return intern("nil");
 			return args.back();
 		});
-	bind(LobjSPtr(bfunc), &obj->getAs<Symbol>());
+	bind(LobjSPtr(bfunc), &obj->getAs<Symbol>());*/
 
 	obj = intern("+");
 	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
@@ -791,7 +792,7 @@ LobjSPtr Env::macroexpandAll(LobjSPtr objPtr) {
 }
 
 LobjSPtr Env::procSpecialForm(LobjSPtr objPtr) {
-	Cons *cons = dynamic_cast<Cons*>(objPtr.get());
+	Cons *cons = &objPtr->getAs<Cons>();
 	Lobj *op = cons->car.get();
 	if (typeid(*op) != typeid(Symbol))
 		return LobjSPtr(nullptr);
@@ -811,6 +812,15 @@ LobjSPtr Env::procSpecialForm(LobjSPtr objPtr) {
 	} else if (opName == "quote") {
 		if (length == 2)
 			return listNth(objPtr, 1);
+	} else if (opName == "do") {
+		if (length == 1)
+			return intern("nil");
+		cons = &cons->cdr->getAs<Cons>();
+		while (cons->cdr->typep<Cons>()) {
+			eval(cons->car);
+			cons = &cons->cdr->getAs<Cons>();
+		}
+		return eval(cons->car);
 	} else if (opName == "def") {
 		if (length == 3) {
 			LobjSPtr variable = listNth(objPtr, 1);
@@ -891,13 +901,13 @@ LobjSPtr Env::eval(LobjSPtr objPtr) {
 
 		Cons *cons = dynamic_cast<Cons*>(o);
 		LobjSPtr opPtr = eval(cons->car);
-		if (typeid(*opPtr) == typeid(Proc)) {
+		if (opPtr->typep<Proc>()) {
 			Proc *func = dynamic_cast<Proc*>(opPtr.get());
 			EnvSPtr env = makeEnvForApply(EnvSPtr(self), func->env,
 																		func->parameterList, cons->cdr);
 			return env->eval(func->body);
 		}
-		if (typeid(*opPtr) == typeid(BuiltinProc)) {
+		if (opPtr->typep<BuiltinProc>()) {
 			BuiltinProc *bfunc = dynamic_cast<BuiltinProc*>(opPtr.get());
 			Lobj *argCons = cons->cdr.get();
 			if (!isProperList(argCons))
