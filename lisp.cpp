@@ -71,7 +71,6 @@ struct String : public Lobj {
 	bool eq(Lobj *obj) const;
 };
 
-
 struct Proc : public Lobj {
 	LobjSPtr parameterList;
 	LobjSPtr body;
@@ -236,6 +235,8 @@ public:
 	}
 
 	EnvSPtr resolveEnvLex(Symbol *symbol) const {
+		if (rootEnv().get() == this)
+			return EnvSPtr(nullptr);
 		if (symbolValueMap.count(symbol))
 			return EnvSPtr(self);
 		if (lexEnv != nullptr)
@@ -262,6 +263,7 @@ public:
 	LobjSPtr macroexpandAll(LobjSPtr objPtr);
 
 	LobjSPtr procSpecialForm(LobjSPtr objPtr);
+	LobjSPtr apply(LobjSPtr op, LobjSPtr args);
 	LobjSPtr eval(LobjSPtr objPtr);
 
 	void repl() {
@@ -312,7 +314,7 @@ LobjSPtr readString(Env &env, std::istream &is) {
 	std::stringstream ss;
 	while (c != '"') {
 		if (c == '\\') {
-			switch (is.get()) {
+			switch (c = is.get()) {
 			case 'n': c = '\n'; break;
 			case 'f': c = '\f'; break;
 			case 'b': c = '\b'; break;
@@ -376,7 +378,11 @@ LobjSPtr Env::read(std::istream &is) {
 	}
 }
 
-// TODO LobjSPtr lastCdrObj(LobjSPtr objPtr) {
+LobjSPtr listLastCdrObj(LobjSPtr objPtr) {
+	if (objPtr->typep<Cons>())
+		return listLastCdrObj(objPtr->getAs<Cons>().cdr);
+	return objPtr;
+}
 
 bool isProperList(Lobj *obj) {
 	if (typeid(*obj) == typeid(Cons))
@@ -529,14 +535,6 @@ Env::Env() {
 												typeid(*args[0]) == typeid(BuiltinProc));
 		});
 	bind(LobjSPtr(bfunc), &obj->getAs<Symbol>());
-
-	/*
-	obj = intern("do");
-	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
-			if (args.size() == 0) return intern("nil");
-			return args.back();
-		});
-	bind(LobjSPtr(bfunc), &obj->getAs<Symbol>());*/
 
 	obj = intern("+");
 	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
@@ -711,7 +709,7 @@ Env::Env() {
 	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
 		if (args.size() != 1)
 			throw "bad arguments for function 'eval'";
-		return env.eval(args[0]);
+		return env.eval(env.macroexpandAll(args[0]));
 	});
 	bind(LobjSPtr(bfunc), &obj->getAs<Symbol>());
 
@@ -919,7 +917,7 @@ LobjSPtr Env::eval(LobjSPtr objPtr) {
 			}
 			return bfunc->function(*this, args);
 		}
-		throw "bad evaluation";
+		throw "bad apply";
 	}
 	return objPtr;
 }
