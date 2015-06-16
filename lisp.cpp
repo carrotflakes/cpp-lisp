@@ -211,19 +211,10 @@ public:
 	}
 
 	EnvSPtr resolveEnv(Symbol *symbol) const {
-		if (symbolValueMap.count(symbol))
-			return EnvSPtr(self);
-		if (lexEnv != nullptr) {
-			EnvSPtr le = lexEnv->resolveEnvLex(symbol);
-			if (le != nullptr)
-				return le;
-			if (outerEnv != nullptr)
-				return outerEnv->resolveEnvDyn(symbol);
-			return EnvSPtr(nullptr);
-		}
-		if (outerEnv != nullptr)
-			return outerEnv->resolveEnv(symbol);
-		return EnvSPtr(nullptr);
+		if (isSpecialVariable(symbol))
+			return resolveEnvDyn(symbol);
+		else
+			return resolveEnvLex(symbol);
 	}
 
 	EnvSPtr resolveEnvDyn(Symbol *symbol) const {
@@ -235,8 +226,8 @@ public:
 	}
 
 	EnvSPtr resolveEnvLex(Symbol *symbol) const {
-		if (rootEnv().get() == this)
-			return EnvSPtr(nullptr);
+		//if (rootEnv().get() == this)
+		//	return EnvSPtr(nullptr);
 		if (symbolValueMap.count(symbol))
 			return EnvSPtr(self);
 		if (lexEnv != nullptr)
@@ -254,6 +245,10 @@ public:
 
 	void bind(LobjSPtr objPtr, Symbol *symbol) {
 		symbolValueMap[symbol] = objPtr;
+	}
+
+	bool isSpecialVariable(Symbol *symbol) const {
+		return rootEnv()->symbolValueMap.count(symbol);
 	}
 
 	LobjSPtr read(std::istream &is);
@@ -435,14 +430,14 @@ EnvSPtr makeEnvForMacro(EnvSPtr outerEnv, EnvSPtr procEnv, LobjSPtr prms, LobjSP
 	EnvSPtr env = outerEnv->makeInnerEnv(outerEnv, procEnv);
 	if (!isProperList(args.get()))
 		throw "bad macro apply";
-	while (typeid(*prms) == typeid(Cons) && typeid(*args) == typeid(Cons)) {
-		Symbol *symbol = dynamic_cast<Symbol*>(dynamic_cast<Cons*>(prms.get())->car.get());
-		env->bind(dynamic_cast<Cons*>(args.get())->car, symbol);
-		prms = dynamic_cast<Cons*>(prms.get())->cdr;
-		args = dynamic_cast<Cons*>(args.get())->cdr;
+	while (prms->typep<Cons>() && args->typep<Cons>()) {
+		Symbol *symbol = &prms->getAs<Cons>().car->getAs<Symbol>();
+		env->bind(args->getAs<Cons>().car, symbol);
+		prms = prms->getAs<Cons>().cdr;
+		args = args->getAs<Cons>().cdr;
 	}
 	if (typeid(*prms) == typeid(Symbol) && !prms->isNil()) {
-		env->bind(args, dynamic_cast<Symbol*>(prms.get()));
+		env->bind(args, &prms->getAs<Symbol>());
 	}
 	return env;
 }
@@ -451,15 +446,15 @@ EnvSPtr makeEnvForApply(EnvSPtr outerEnv, EnvSPtr procEnv, LobjSPtr prms, LobjSP
 	EnvSPtr env = outerEnv->makeInnerEnv(outerEnv, procEnv);
 	if (!isProperList(args.get()))
 		throw "bad apply";
-	while (typeid(*prms) == typeid(Cons) && typeid(*args) == typeid(Cons)) {
-		Symbol *symbol = dynamic_cast<Symbol*>(dynamic_cast<Cons*>(prms.get())->car.get());
-		env->bind(outerEnv->eval(dynamic_cast<Cons*>(args.get())->car), symbol);
-		prms = dynamic_cast<Cons*>(prms.get())->cdr;
-		args = dynamic_cast<Cons*>(args.get())->cdr;
+	while (prms->typep<Cons>() && args->typep<Cons>()) {
+		Symbol *symbol = &prms->getAs<Cons>().car->getAs<Symbol>();
+		env->bind(outerEnv->eval(args->getAs<Cons>().car), symbol);
+		prms = prms->getAs<Cons>().cdr;
+		args = args->getAs<Cons>().cdr;
 	}
 	if (typeid(*prms) == typeid(Symbol) && !prms->isNil()) {
 		LobjSPtr rest = evalListElements(outerEnv, args);
-		env->bind(rest, dynamic_cast<Symbol*>(prms.get()));
+		env->bind(rest, &prms->getAs<Symbol>());
 	}
 	return env;
 }

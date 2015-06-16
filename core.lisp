@@ -77,6 +77,15 @@
            (cons (func (car xs)) (map-single func (cdr xs)))
            xs)))
 
+(def tree-eq?
+    (\ (obj-1 obj-2)
+       (if (eq? obj-1 obj-2)
+           t
+           (if (cons? obj-1)
+               (if (cons? obj-2)
+                   (if (tree-eq? (car obj-1) (car obj-2))
+                       (tree-eq? (cdr obj-1) (cdr obj-2))))))))
+
 
 ;;; macros
 (def when

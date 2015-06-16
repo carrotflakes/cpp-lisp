@@ -51,7 +51,7 @@ Toy LISP implementation for c++0x.
 - `macroexpand-all`
 
 ## Standard functions and macros
-User can use some functions and macros immediately on LISP start. These are defined in `core.lisp` file.
+Some useful functions and macros are available immediately on LISP start. These are defined in `core.lisp` file.
 
 
 ## Samples
@@ -69,21 +69,20 @@ User can use some functions and macros immediately on LISP start. These are defi
 
 ### Lexical scope and closure
 ```
-(def count 10)
 (def count-up
-	   (let (count 0)
+	   (let (count 0) ; This 'count' is a lexical variable.
           (\ () (set! count (+ count 1)) count)))
 (println (count-up) (count-up) (count-up))
 ; 1
 ; 2
 ; 3
-(println count)
-; 10
+(println (bound? (quote count)))
+; nil
 ```
 
 ### Dynamic scope
 ```
-(def count 10)
+(def count 10) ; This 'count' is a special variable.
 (def count-up
      (\ () (set! count (+ count 1)) count))
 (println (count-up) (count-up) (count-up))
