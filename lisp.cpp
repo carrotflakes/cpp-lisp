@@ -113,7 +113,7 @@ void Cons::print(std::ostream &os) const {
 			Cons *cons = &o->getAs<Cons>();
 			cons->car->print(os);
 			o = cons->cdr.get();
-		} else if (o->typep<Symbol>() && o->getAs<Symbol>().name == "nil") {
+		} else if (o->isNil()) {
 			break;
 		} else {
 			os << " . ";
@@ -153,16 +153,15 @@ bool Lobj::eq(Lobj *obj) const {
 }
 
 bool Int::eq(Lobj *obj) const {
-	return typeid(*obj) == typeid(Int) && value == obj->getAs<Int>().value;
+	return obj->typep<Int>() && value == obj->getAs<Int>().value;
 }
 
 bool String::eq(Lobj *obj) const {
-	return typeid(*obj) == typeid(String) && value == obj->getAs<String>().value;
+	return obj->typep<String>() && value == obj->getAs<String>().value;
 }
 
 bool Lobj::isNil() const {
-	return typeid(*this) == typeid(Symbol) &&
-		this->getAs<Symbol>().name == "nil";
+	return this->typep<Symbol>() &&	this->getAs<Symbol>().name == "nil";
 }
 
 
@@ -187,20 +186,26 @@ class Env {
 	EnvSPtr lexEnv;
 	std::map<Symbol*, LobjSPtr> symbolValueMap;
 
+public:
 	Env();
 	Env(EnvSPtr e, EnvSPtr l)
 		: outerEnv(e), lexEnv(l) {}
 
-public:
 	static EnvSPtr makeEnv() {
-		EnvSPtr env(new Env());
+		EnvSPtr env = std::make_shared<Env>();
 		env->self = env;
 		return env;
 	}
 
-	static EnvSPtr makeInnerEnv(EnvSPtr p, EnvSPtr l = nullptr) {
-		EnvSPtr env(new Env(p, l));
-		env->self = env;
+	static EnvSPtr makeInnerEnv(EnvSPtr p, EnvSPtr l = nullptr, bool wastable = false) {
+		EnvSPtr env;
+		if (wastable) {
+			env = EnvSPtr(p->self);
+			env->lexEnv = l;
+		} else {
+			env = std::make_shared<Env>(p, l);
+			env->self = env;
+		}
 		return env;
 	}
 
@@ -226,8 +231,6 @@ public:
 	}
 
 	EnvSPtr resolveEnvLex(Symbol *symbol) const {
-		//if (rootEnv().get() == this)
-		//	return EnvSPtr(nullptr);
 		if (symbolValueMap.count(symbol))
 			return EnvSPtr(self);
 		if (lexEnv != nullptr)
@@ -318,9 +321,10 @@ LobjSPtr readString(Env &env, std::istream &is) {
 			case '\'': c = '\''; break;
 			case '\"': c = '\"'; break;
 			case '\\': c = '\\'; break;
+			case '\n': case '\r': c = 0; break;
 			}
 		}
-		ss << c;
+		if (c != 0) ss << c;
 		if (is.eof()) throw "parse failed";
 		c = is.get();
 	}
@@ -426,8 +430,8 @@ LobjSPtr evalListElements(EnvSPtr env, LobjSPtr objPtr) {
 	return LobjSPtr(new Cons(env->eval(cons->car), evalListElements(env, cons->cdr)));
 }
 
-EnvSPtr makeEnvForMacro(EnvSPtr outerEnv, EnvSPtr procEnv, LobjSPtr prms, LobjSPtr args) {
-	EnvSPtr env = outerEnv->makeInnerEnv(outerEnv, procEnv);
+EnvSPtr makeEnvForMacro(EnvSPtr outerEnv, EnvSPtr procEnv, LobjSPtr prms, LobjSPtr args, bool wastable = false) {
+	EnvSPtr env = outerEnv->makeInnerEnv(outerEnv, procEnv, wastable);
 	if (!isProperList(args.get()))
 		throw "bad macro apply";
 	while (prms->typep<Cons>() && args->typep<Cons>()) {
@@ -442,8 +446,8 @@ EnvSPtr makeEnvForMacro(EnvSPtr outerEnv, EnvSPtr procEnv, LobjSPtr prms, LobjSP
 	return env;
 }
 
-EnvSPtr makeEnvForApply(EnvSPtr outerEnv, EnvSPtr procEnv, LobjSPtr prms, LobjSPtr args) {
-	EnvSPtr env = outerEnv->makeInnerEnv(outerEnv, procEnv);
+EnvSPtr makeEnvForApply(EnvSPtr outerEnv, EnvSPtr procEnv, LobjSPtr prms, LobjSPtr args, bool wastable = false) {
+	EnvSPtr env = outerEnv->makeInnerEnv(outerEnv, procEnv, wastable);
 	if (!isProperList(args.get()))
 		throw "bad apply";
 	while (prms->typep<Cons>() && args->typep<Cons>()) {
@@ -758,11 +762,11 @@ LobjSPtr Env::macroexpand (LobjSPtr objPtr) {
 }*/
 
 LobjSPtr Env::macroexpandAll(LobjSPtr objPtr) {
-	if (typeid(*objPtr) != typeid(Cons))
+	if (!objPtr->typep<Cons>())
 		return objPtr;
-	Cons *cons = dynamic_cast<Cons*>(objPtr.get());
-	if (typeid(*cons->car) == typeid(Symbol)) {
-		Symbol *opSymbol = dynamic_cast<Symbol*>(cons->car.get());
+	Cons *cons = &objPtr->getAs<Cons>();
+	if (cons->car->typep<Symbol>()) {
+		Symbol *opSymbol = &cons->car->getAs<Symbol>();
 		// special form
 		// TODO quote set! let \ macro
 		if (opSymbol->name == "quote") {
@@ -772,8 +776,8 @@ LobjSPtr Env::macroexpandAll(LobjSPtr objPtr) {
 		//}
 		LobjSPtr op = resolve(opSymbol);
 		//macro
-		if (op != nullptr && typeid(*op) == typeid(Macro)) {
-			Macro *macro = dynamic_cast<Macro*>(op.get());
+		if (op != nullptr && op->typep<Macro>()) {
+			Macro *macro = &op->getAs<Macro>();
 			EnvSPtr env = makeEnvForMacro(EnvSPtr(self), macro->env,
 																		macro->parameterList, cons->cdr);
 			return macroexpandAll(env->eval(macro->body));
@@ -787,10 +791,10 @@ LobjSPtr Env::macroexpandAll(LobjSPtr objPtr) {
 LobjSPtr Env::procSpecialForm(LobjSPtr objPtr) {
 	Cons *cons = &objPtr->getAs<Cons>();
 	Lobj *op = cons->car.get();
-	if (typeid(*op) != typeid(Symbol))
+	if (!op->typep<Symbol>())
 		return LobjSPtr(nullptr);
 	int length = listLength(cons);
-	std::string opName = dynamic_cast<Symbol*>(op)->name;
+	std::string opName = op->getAs<Symbol>().name;
 	if (opName == "if") {
 		if (length == 3 || length == 4) {
 			LobjSPtr cond = listNth(objPtr, 1);
