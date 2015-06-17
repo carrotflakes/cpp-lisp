@@ -1,0 +1,28 @@
+(defn fibonacci (n)
+  (if (< 1 n)
+      (+ (fibonacci (- n 1)) (fibonacci (- n 2)))
+      n))
+
+(defn bench-fibonacci ()
+    (time (fibonacci 64)))
+
+
+(defn ackermann (m n)
+  (cond
+    ((= m 0) (+ n 1))
+    ((= n 0) (ackermann (- m 1) 1))
+    (t (ackermann (- m 1) (ackermann m (- n 1))))))
+
+(defn bench-ack ()
+  (time ackermann 4 1))
+
+
+(defn tarai (x y z)
+  (if (or (< x y) (= x y))
+      y
+      (tarai (tarai (- x 1) y z)
+             (tarai (- y 1) z x)
+             (tarai (- z 1) x y))))
+
+(defn bench-tarai ()
+  (time ackermann 10 5))
