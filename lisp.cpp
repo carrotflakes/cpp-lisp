@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <fstream>
 #include <ctime>
+#include "fmap.hpp"
 
 #define TCO true
 
@@ -170,12 +171,13 @@ bool Lobj::isNil() const {
 
 int gensymId = 0;
 std::map<std::string, LobjSPtr> symbolMap;
+EnvSPtr rootEnv;
 
 LobjSPtr intern(std::string name) {
 	auto it = symbolMap.find(name);
 	LobjSPtr objPtr;
 	if (it == symbolMap.end()) {
-		objPtr = LobjSPtr(new Symbol(name));
+		objPtr = std::make_shared<Symbol>(name);
 		symbolMap[name] = objPtr;
 	} else {
 		objPtr = it->second;
@@ -187,7 +189,7 @@ class Env {
 	EnvWPtr self;
 	EnvSPtr outerEnv;
 	EnvSPtr lexEnv;
-	std::map<Symbol*, LobjSPtr> symbolValueMap;
+	Fmap<Symbol*, LobjSPtr> symbolValueMap;
 	bool closed = true;
 
 public:
@@ -201,17 +203,10 @@ public:
 		return env;
 	}
 
-	static EnvSPtr makeInnerEnv(EnvSPtr p, EnvSPtr l = nullptr) {
-		EnvSPtr env;
-		env = std::make_shared<Env>(p, l);
+	EnvSPtr makeInnerEnv(EnvSPtr l = nullptr) const {
+		EnvSPtr env = std::make_shared<Env>(EnvSPtr(self), l);
 		env->self = env;
 		return env;
-	}
-
-	EnvSPtr rootEnv() const {
-		if (outerEnv != nullptr)
-			return outerEnv->rootEnv();
-		return EnvSPtr(self);
 	}
 
 	EnvSPtr resolveEnv(Symbol *symbol) const {
@@ -250,7 +245,7 @@ public:
 	}
 
 	bool isSpecialVariable(Symbol *symbol) const {
-		return rootEnv()->symbolValueMap.count(symbol);
+		return rootEnv->symbolValueMap.count(symbol);
 	}
 
 	void merge(EnvSPtr env) {
@@ -259,6 +254,11 @@ public:
 		}
 		if (env->lexEnv != nullptr)
 			lexEnv = env->lexEnv;
+	}
+
+	void setLexEnv(EnvSPtr l) {
+		if (l != nullptr)
+			lexEnv = l;
 	}
 
 	bool isClosed() const {
@@ -271,9 +271,9 @@ public:
 	LobjSPtr macroexpand(LobjSPtr objPtr);	*/
 	LobjSPtr macroexpandAll(LobjSPtr objPtr);
 
-	LobjSPtr procSpecialForm(LobjSPtr objPtr, bool envWastable = false);
+	LobjSPtr procSpecialForm(LobjSPtr objPtr, bool tail = false);
 	//LobjSPtr apply(LobjSPtr op, LobjSPtr args);
-	LobjSPtr eval(LobjSPtr objPtr, bool envWastable = false);
+	LobjSPtr eval(LobjSPtr objPtr, bool tail = false);
 
 	LobjSPtr evalTop(LobjSPtr objPtr) {
 		return eval(macroexpandAll(objPtr));
@@ -465,7 +465,7 @@ LobjSPtr map(LobjSPtr objPtr, std::function<LobjSPtr(LobjSPtr)> func) {
 	if (typeid(*objPtr) != typeid(Cons))
 		return objPtr;
 	Cons *cons = dynamic_cast<Cons*>(objPtr.get());
-	return LobjSPtr(new Cons(func(cons->car), map(cons->cdr, func)));
+	return std::make_shared<Cons>(func(cons->car), map(cons->cdr, func));
 }
 
 LobjSPtr boolToLobj(bool b) {
@@ -475,11 +475,19 @@ LobjSPtr boolToLobj(bool b) {
 LobjSPtr evalListElements(EnvSPtr env, LobjSPtr objPtr) {
 	if (typeid(*objPtr) != typeid(Cons)) return objPtr;
 	Cons *cons = dynamic_cast<Cons*>(objPtr.get());
-	return LobjSPtr(new Cons(env->eval(cons->car), evalListElements(env, cons->cdr)));
+	return std::make_shared<Cons>(env->eval(cons->car), evalListElements(env, cons->cdr));
 }
 
-EnvSPtr makeEnvForMacro(EnvSPtr outerEnv, EnvSPtr procEnv, LobjSPtr prms, LobjSPtr args, bool wastable = false) {
-	EnvSPtr env = outerEnv->makeInnerEnv(outerEnv, procEnv);
+LobjSPtr vectorToList(std::vector<LobjSPtr> &v) {
+	LobjSPtr list = intern("nil");
+	for (auto it = v.rbegin(); it != v.rend(); ++it) {
+		list = std::make_shared<Cons>(*it, list);
+	}
+	return list;
+}
+
+EnvSPtr makeEnvForMacro(EnvSPtr outerEnv, EnvSPtr procEnv, LobjSPtr prms, LobjSPtr args, bool tail = false) {
+	EnvSPtr env = outerEnv->makeInnerEnv(procEnv);
 	if (!isProperList(args.get()))
 		throw "bad macro apply";
 	while (prms->typep<Cons>() && args->typep<Cons>()) {
@@ -491,11 +499,45 @@ EnvSPtr makeEnvForMacro(EnvSPtr outerEnv, EnvSPtr procEnv, LobjSPtr prms, LobjSP
 	if (typeid(*prms) == typeid(Symbol) && !prms->isNil()) {
 		env->bind(args, &prms->getAs<Symbol>());
 	}
+	if (tail && !outerEnv->isClosed()) {
+		outerEnv->merge(env);
+		env = outerEnv;
+	}
 	return env;
 }
-
-EnvSPtr makeEnvForApply(EnvSPtr outerEnv, EnvSPtr procEnv, LobjSPtr prms, LobjSPtr args, bool wastable = false) {
-	EnvSPtr env = outerEnv->makeInnerEnv(outerEnv, procEnv);
+/*
+EnvSPtr makeEnvForApply(EnvSPtr outerEnv, EnvSPtr procEnv, LobjSPtr prms, LobjSPtr args, bool tail = false) {
+	if (!isProperList(args.get()))
+		throw "bad apply";
+	int prmsLength = listLength(prms.get());
+	int argsLength = listLength(args.get());
+	if (argsLength < prmsLength) throw "arguments is fewer";
+	std::vector<LobjSPtr> evaledArgs(prmsLength);
+	for (int i = 0; i < prmsLength; ++i) {
+		evaledArgs[i] = outerEnv->eval(args->getAs<Cons>().car);
+		args = args->getAs<Cons>().cdr;
+	}
+	LobjSPtr argsRest = evalListElements(outerEnv, args);
+	EnvSPtr env;
+	if (tail && !outerEnv->isClosed()) {
+		env = outerEnv;
+		env->setLexEnv(procEnv);
+	} else {
+		env = outerEnv->makeInnerEnv(procEnv);
+	}
+	for (auto &evaledArg : evaledArgs) {
+		Symbol *symbol = &prms->getAs<Cons>().car->getAs<Symbol>();
+		env->bind(evaledArg, symbol);
+		prms = prms->getAs<Cons>().cdr;
+	}
+	if (typeid(*prms) == typeid(Symbol) && !prms->isNil()) {
+		env->bind(argsRest, &prms->getAs<Symbol>());
+	}
+	return env;
+}//*/
+//*
+EnvSPtr makeEnvForApply(EnvSPtr outerEnv, EnvSPtr procEnv, LobjSPtr prms, LobjSPtr args, bool tail = false) {
+	EnvSPtr env = outerEnv->makeInnerEnv(procEnv);
 	if (!isProperList(args.get()))
 		throw "bad apply";
 	while (prms->typep<Cons>() && args->typep<Cons>()) {
@@ -508,12 +550,12 @@ EnvSPtr makeEnvForApply(EnvSPtr outerEnv, EnvSPtr procEnv, LobjSPtr prms, LobjSP
 		LobjSPtr rest = evalListElements(outerEnv, args);
 		env->bind(rest, &prms->getAs<Symbol>());
 	}
-	if (wastable && !outerEnv->isClosed()) {
+	if (tail && !outerEnv->isClosed()) {
 		outerEnv->merge(env);
-		return outerEnv;
+		env = outerEnv;
 	}
 	return env;
-}
+}//*/
 
 
 Env::Env() {
@@ -594,7 +636,7 @@ Env::Env() {
 				if (typeid(*objPtr) != typeid(Int)) throw "bad arguments for function '+'";
 				value += dynamic_cast<Int*>(objPtr.get())->value;
 			}
-			return LobjSPtr(new Int(value));
+			return std::make_shared<Int>(value);
 		});
 	bind(LobjSPtr(bfunc), &obj->getAs<Symbol>());
 
@@ -604,12 +646,12 @@ Env::Env() {
 				throw "bad arguments for function '-'";
 			int value = dynamic_cast<Int*>(args[0].get())->value;
 			if (args.size() == 1)
-				return LobjSPtr(new Int(-value));
+				return std::make_shared<Int>(-value);
 			for (int i = 1; i < args.size(); ++i) {
 				if (typeid(*args[i]) != typeid(Int)) throw "bad arguments for function '-'";
 				value -= dynamic_cast<Int*>(args[i].get())->value;
 			}
-			return LobjSPtr(new Int(value));
+			return std::make_shared<Int>(value);
 		});
 	bind(LobjSPtr(bfunc), &obj->getAs<Symbol>());
 
@@ -620,7 +662,7 @@ Env::Env() {
 				if (typeid(*objPtr) != typeid(Int)) throw "bad arguments for function '*'";
 				value *= dynamic_cast<Int*>(objPtr.get())->value;
 			}
-			return LobjSPtr(new Int(value));
+			return std::make_shared<Int>(value);
 		});
 	bind(LobjSPtr(bfunc), &obj->getAs<Symbol>());
 
@@ -635,7 +677,7 @@ Env::Env() {
 				if (divisor == 0) throw "dividing by zero";
 				value /= divisor;
 			}
-			return LobjSPtr(new Int(value));
+			return std::make_shared<Int>(value);
 		});
 	bind(LobjSPtr(bfunc), &obj->getAs<Symbol>());
 
@@ -647,7 +689,7 @@ Env::Env() {
 			int value = dynamic_cast<Int*>(args[0].get())->value;
 			int divisor = dynamic_cast<Int*>(args[1].get())->value;
 			if (divisor == 0) throw "dividing by zero";
-			return LobjSPtr(new Int(value % divisor));
+			return std::make_shared<Int>(value % divisor);
 		});
 	bind(LobjSPtr(bfunc), &obj->getAs<Symbol>());
 
@@ -706,7 +748,7 @@ Env::Env() {
 			for (LobjSPtr &objPtr : args) {
 				objPtr->print(ss);
 			}
-			return LobjSPtr(new String(ss.str()));
+			return std::make_shared<String>(ss.str());
 		});
 	bind(LobjSPtr(bfunc), &obj->getAs<Symbol>());
 
@@ -730,7 +772,7 @@ Env::Env() {
 	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
 		if (args.size() != 2)
 			throw "bad arguments for function 'cons'";
-		return LobjSPtr(new Cons(args[0], args[1]));
+		return std::make_shared<Cons>(args[0], args[1]);
 	});
 	bind(LobjSPtr(bfunc), &obj->getAs<Symbol>());
 
@@ -744,7 +786,7 @@ Env::Env() {
 			} else {
 				throw "bad arguments for function 'gensym'";
 			}
-			return LobjSPtr(new Symbol(ss.str()));
+			return std::make_shared<Symbol>(ss.str());
 	});
 	bind(LobjSPtr(bfunc), &obj->getAs<Symbol>());
 
@@ -760,7 +802,7 @@ Env::Env() {
 	bfunc = new BuiltinProc([](Env &env, std::vector<LobjSPtr> &args) {
 			if (args.size() != 0)
 				throw "bad arguments for function 'get-time'";
-			return LobjSPtr(new Int(static_cast<int>(std::clock() / (CLOCKS_PER_SEC / 1000))));
+			return std::make_shared<Int>(static_cast<int>(std::clock() / (CLOCKS_PER_SEC / 1000)));
 	});
 	bind(LobjSPtr(bfunc), &obj->getAs<Symbol>());
 
@@ -850,12 +892,10 @@ LobjSPtr Env::macroexpandAll(LobjSPtr objPtr) {
 	if (cons->car->typep<Symbol>()) {
 		Symbol *opSymbol = &cons->car->getAs<Symbol>();
 		// special form
-		// TODO quote set! let \ macro
+		// TODO set! let \ macro
 		if (opSymbol->name == "quote") {
 			return objPtr;
 		}
-		//if (opSymbol->name == "set!") {
-		//}
 		LobjSPtr op = resolve(opSymbol);
 		//macro
 		if (op != nullptr && op->typep<Macro>()) {
@@ -870,7 +910,7 @@ LobjSPtr Env::macroexpandAll(LobjSPtr objPtr) {
 		});
 }
 
-LobjSPtr Env::procSpecialForm(LobjSPtr objPtr, bool envWastable) {
+LobjSPtr Env::procSpecialForm(LobjSPtr objPtr, bool tail) {
 	Cons *cons = &objPtr->getAs<Cons>();
 	Lobj *op = cons->car.get();
 	if (!op->typep<Symbol>())
@@ -882,9 +922,9 @@ LobjSPtr Env::procSpecialForm(LobjSPtr objPtr, bool envWastable) {
 		if (length == 3 || length == 4) {
 			LobjSPtr cond = listNth(objPtr, 1);
 			if(!eval(cond)->isNil()) {
-				return eval(listNth(objPtr, 2), envWastable);
+				return eval(listNth(objPtr, 2), tail);
 			} else if (length == 4) {
-				return eval(listNth(objPtr, 3), envWastable);
+				return eval(listNth(objPtr, 3), tail);
 			} else {
 				return intern("nil");
 			}
@@ -900,15 +940,15 @@ LobjSPtr Env::procSpecialForm(LobjSPtr objPtr, bool envWastable) {
 			eval(cons->car);
 			cons = &cons->cdr->getAs<Cons>();
 		}
-		return eval(cons->car, envWastable);
+		return eval(cons->car, tail);
 	} else if (opName == "def") {
 		if (length == 3) {
 			LobjSPtr variable = listNth(objPtr, 1);
 			if (typeid(*variable) != typeid(Symbol))
 				throw "bad 'def'";
 			Symbol *symbol = dynamic_cast<Symbol*>(variable.get());
-			EnvSPtr env = rootEnv();
-			env->bind(eval(listNth(objPtr, 2), envWastable), symbol); // wastable?
+			EnvSPtr env = rootEnv;
+			env->bind(eval(listNth(objPtr, 2), tail), symbol); // tail?
 			return variable;
 		}
 	} else if (opName == "set!") {
@@ -918,8 +958,8 @@ LobjSPtr Env::procSpecialForm(LobjSPtr objPtr, bool envWastable) {
 				throw "bad 'set!'";
 			Symbol *symbol = dynamic_cast<Symbol*>(variable.get());
 			EnvSPtr env = resolveEnv(symbol);
-			if (env == nullptr) env = rootEnv();
-			LobjSPtr value = eval(listNth(objPtr, 2), envWastable);
+			if (env == nullptr) env = rootEnv;
+			LobjSPtr value = eval(listNth(objPtr, 2), tail);
 			env->bind(value, symbol);
 			return value;
 		}
@@ -929,20 +969,19 @@ LobjSPtr Env::procSpecialForm(LobjSPtr objPtr, bool envWastable) {
 		LobjSPtr bindings = listNth(objPtr, 1);
 		if (!isProperList(bindings.get())) throw "bad let bindings";
 		if (listLength(bindings.get()) % 2 != 0) throw "number of bindings elements of let is odd.";
-		EnvSPtr env = makeInnerEnv(EnvSPtr(self));
+		EnvSPtr env = makeInnerEnv();
 		while (!bindings->isNil()) {
 			LobjSPtr objSymbol = dynamic_cast<Cons*>(bindings.get())->car;
 			LobjSPtr objForm = dynamic_cast<Cons*>(dynamic_cast<Cons*>(bindings.get())->cdr.get())->car;
 			// TODO type check
-			Symbol *symbol = dynamic_cast<Symbol*>(objSymbol.get());
-			env->bind(eval(objForm), symbol);
+			env->bind(eval(objForm), &objSymbol->getAs<Symbol>());
 			bindings = listNthCdr(bindings, 2);
 		}
-		if (envWastable && !closed) {
+		if (tail && !closed) {
 			this->merge(env);
 			env = EnvSPtr(self);
 		}
-		return env->eval(LobjSPtr(new Cons(intern("do"), listNthCdr(objPtr, 2))), TCO);
+		return env->eval(std::make_shared<Cons>(intern("do"), listNthCdr(objPtr, 2)), TCO);
 	} else if (opName == "let*") {
 		if (length < 2) throw "bad let*";
 
@@ -950,10 +989,10 @@ LobjSPtr Env::procSpecialForm(LobjSPtr objPtr, bool envWastable) {
 		if (!isProperList(bindings.get())) throw "bad let* bindings";
 		if (listLength(bindings.get()) % 2 != 0) throw "number of bindings elements of let* is odd.";
 		EnvSPtr env;
-		if (envWastable && !closed) {
+		if (tail && !closed) {
 			env = EnvSPtr(self);
 		} else {
-			env = makeInnerEnv(EnvSPtr(self));
+			env = makeInnerEnv();
 		}
 		while (!bindings->isNil()) {
 			LobjSPtr objSymbol = dynamic_cast<Cons*>(bindings.get())->car;
@@ -963,26 +1002,26 @@ LobjSPtr Env::procSpecialForm(LobjSPtr objPtr, bool envWastable) {
 			env->bind(env->eval(objForm), symbol);
 			bindings = listNthCdr(bindings, 2);
 		}
-		return env->eval(LobjSPtr(new Cons(intern("do"), listNthCdr(objPtr, 2))), TCO);
+		return env->eval(std::make_shared<Cons>(intern("do"), listNthCdr(objPtr, 2)), TCO);
 	} else if (opName == "\\") {
 		if (2 <= length) {
 			LobjSPtr pl = listNth(objPtr, 1);
 			//if (!isProperList(pl.get())) throw "bad lambda form";
 			closed = true;
-			return LobjSPtr(new Proc(pl, LobjSPtr(new Cons(intern("do"), listNthCdr(objPtr, 2))), EnvSPtr(self)));
+			return std::make_shared<Proc>(pl, std::make_shared<Cons>(intern("do"), listNthCdr(objPtr, 2)), EnvSPtr(self));
 		}
 	} else if (opName == "macro") {
 		if (2 <= length) {
 			LobjSPtr pl = listNth(objPtr, 1);
 			//if (!isProperList(pl.get())) throw "bad lambda form";
 			closed = true;
-			return LobjSPtr(new Macro(pl, LobjSPtr(new Cons(intern("do"), listNthCdr(objPtr, 2))), EnvSPtr(self)));
+			return std::make_shared<Macro>(pl, std::make_shared<Cons>(intern("do"), listNthCdr(objPtr, 2)), EnvSPtr(self));
 		}
 	}
 	return LobjSPtr(nullptr);
 }
 
-LobjSPtr Env::eval(LobjSPtr objPtr, bool envWastable) {
+LobjSPtr Env::eval(LobjSPtr objPtr, bool tail) {
 	//objPtr->print(std::cout); std::cout << " | ";
 	Lobj *o = objPtr.get();
 	if (o->typep<Symbol>()) {
@@ -997,7 +1036,7 @@ LobjSPtr Env::eval(LobjSPtr objPtr, bool envWastable) {
 		return objPtr;
 	}
 	if (o->typep<Cons>()) {
-		LobjSPtr psfr = procSpecialForm(objPtr, envWastable);
+		LobjSPtr psfr = procSpecialForm(objPtr, tail);
 		if (psfr != nullptr) {
 			return psfr;
 		}
@@ -1007,7 +1046,7 @@ LobjSPtr Env::eval(LobjSPtr objPtr, bool envWastable) {
 		if (opPtr->typep<Proc>()) {
 			Proc *func = &opPtr->getAs<Proc>();
 			EnvSPtr env = makeEnvForApply(EnvSPtr(self), func->env,
-																		func->parameterList, cons->cdr, envWastable);
+																		func->parameterList, cons->cdr, tail);
 			return env->eval(func->body, TCO);
 		}
 
@@ -1037,16 +1076,16 @@ int main(int argc, char* argv[]) {
 			initializeFlg = false;
 	}
 
-	EnvSPtr env = Env::makeEnv();
+	rootEnv = Env::makeEnv();
 
 	if (initializeFlg) {
 		std::istringstream ss(initializeCode);
-		LobjSPtr objPtr = env->read(ss);
-		env->evalTop(objPtr);
+		LobjSPtr objPtr = rootEnv->read(ss);
+		rootEnv->evalTop(objPtr);
 	}
 
 	try {
-		env->repl();
+		rootEnv->repl();
 	} catch (char const *e) {
 		std::cout << "Fatal error: " << e << std::endl;
 	}
