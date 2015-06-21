@@ -19,7 +19,7 @@ Toy LISP implementation for c++0x.
 - `let` e.g. `(let (a 1 b 2) (+ a b))` => `3`
 - `let*`
 - `\` a.k.a. `lambda`.
-- `macro` e.g. `(set! set-nil (macro (a) (cons (quote set!) (cons a (cons nil ()))))) (set-nil foo) (println foo)` => `nil`
+- `macro` e.g. `(def set-nil (macro (a) (cons (quote set!) (cons a (cons nil ()))))) (set-nil foo) (println foo)` => `nil`
 
 ## Built-in functions
 - `eq?`
@@ -45,6 +45,7 @@ Toy LISP implementation for c++0x.
 - `cons`
 - `gensym`
 - `bound?`
+- `get-time`
 - `eval`
 - `read` Reads S-expression from standard input.
 - `load` Receives a file name as String and evaluates the lisp code in the file.
@@ -54,7 +55,7 @@ Toy LISP implementation for c++0x.
 Some useful functions and macros are available immediately on LISP start. These are defined in `core.lisp` file.
 
 
-## Samples
+## Examples
 
 ### Fibonacci
 ```

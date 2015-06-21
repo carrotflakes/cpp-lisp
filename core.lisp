@@ -38,38 +38,35 @@
 (def list (\ xs xs))
 
 ; list*
-(let (f ())
-  (set! f
-    (\ (xs)
-      (if (cons? xs)
-          (if (cons? (cdr xs))
-              (cons (car xs) (f (cdr xs)))
-              (car xs))
-          nil)))
+(let* ($f
+       (\ (xs)
+         (if (cons? xs)
+             (if (cons? (cdr xs))
+                 (cons (car xs) ($f (cdr xs)))
+                 (car xs))
+             nil)))
   (def list*
-    (\ xs (f xs))))
+    (\ xs ($f xs))))
 
 ; append
-(let (f ())
-  (set! f
-    (\ (xs ys)
-      (if (cons? ys)
-          (cons (car ys) (f xs (cdr ys)))
-          (if (cons? xs)
-              (f (cdr xs) (car xs))
-              ()))))
+(let* ($f
+       (\ (xs ys)
+         (if (cons? ys)
+             (cons (car ys) ($f xs (cdr ys)))
+             (if (cons? xs)
+                 ($f (cdr xs) (car xs))
+                 ()))))
   (def append
-    (\ xs (f xs ()))))
+      (\ xs ($f xs ()))))
 
 ; reverse
-(let (rev ())
-  (set! rev
-        (\ (xs ys)
-           (if (nil? xs)
-               ys
-               (rev (cdr xs) (cons (car xs) ys)))))
+(let* ($f
+       (\ (xs ys)
+         (if (nil? xs)
+             ys
+             ($f (cdr xs) (cons (car xs) ys)))))
   (def reverse
-        (\ (xs) (rev xs ()))))
+        (\ (xs) ($f xs ()))))
 
 (def map-single
     (\ (func xs)
@@ -125,13 +122,13 @@
         t)))
 
 ; or
-(let* (f
+(let* ($f
        (\ (forms sym)
          (if (cons? forms)
              (list (quote if)
                    (list (quote set!) sym (car forms))
                    sym
-                   (f (cdr forms) sym))
+                   ($f (cdr forms) sym))
              nil)))
 
   (def or
@@ -140,67 +137,67 @@
                (list (quote let)
                      (list sym
                            ())
-                     (f forms sym))))))
+                     ($f forms sym))))))
 
 
 ; quasiquote
 ; e.g.
 ;   in Common Lisp : `(a ,b ,@c)
 ;   in cpp-lisp    : (qquote (a (unq b) (unqs c)))
-(let* (qqe
+(let* ($qqe
        (\ (form)
          (cond
            ((and (cons? form) (eq? (car form) (quote unq)))
             (car (cdr form)))
-           ((quotable? form)
+           (($quotable? form)
             (list (quote quote) form))
-           ((listable? form)
-            (list* (quote list) (map-single qqe form)))
+           (($listable? form)
+            (list* (quote list) (map-single $qqe form)))
            (t
             (list* (quote append)
-                   (append-elts form ())))))
-       append-elts
+                   ($append-elts form ())))))
+       $append-elts
        (\ (forms list-forms)
          (if (cons? forms)
              (if (and (cons? (car forms))
                       (eq? (car (car forms)) (quote unqs)))
                  (if (cons? list-forms)
-                     (cons (qqe (reverse list-forms))
+                     (cons ($qqe (reverse list-forms))
                            (cons (car (cdr (car forms)))
-                                 (append-elts (cdr forms) ())))
+                                 ($append-elts (cdr forms) ())))
                      (cons (car (cdr (car forms)))
-                           (append-elts (cdr forms) ())))
-                 (append-elts (cdr forms) (cons (car forms) list-forms)))
+                           ($append-elts (cdr forms) ())))
+                 ($append-elts (cdr forms) (cons (car forms) list-forms)))
              (if (cons? list-forms)
-                 (list (qqe (reverse list-forms)))
+                 (list ($qqe (reverse list-forms)))
                  ())))
-       quotable?-aux
+       $quotable?-aux
        (\ (form)
          (if (cons? form)
-             (and (quotable? (car form))
-                  (quotable?-aux (cdr form)))
+             (and ($quotable? (car form))
+                  ($quotable?-aux (cdr form)))
              t))
-       quotable?
+       $quotable?
        (\ (form)
          (if (cons? form)
              (if (or (eq? (car form) (quote unq))
                      (eq? (car form) (quote unqs)))
                  nil
-                 (and (quotable? (car form))
-                      (quotable?-aux (cdr form))))
+                 (and ($quotable? (car form))
+                      ($quotable?-aux (cdr form))))
              t))
-       listable?
+       $listable?
        (\ (form)
          (if (cons? form)
              (and (if (cons? (car form))
                       (not (eq? (car (car form)) (quote unqs)))
                       t)
-                  (listable? (cdr form)))
+                  ($listable? (cdr form)))
              t)))
 
   (def qquote
       (macro (form)
-             (qqe form))))
+             ($qqe form))))
 
 (def defn
     (macro (name lambda-list . body)
@@ -222,3 +219,9 @@
     (qquote (let ((unq s) (car (unq xs)))
               (set! (unq xs) (cdr (unq xs)))
               (unq s)))))
+
+(defm time forms
+  (let (start-time (gensym))
+    (qquote (let ((unq start-time) (get-time))
+              (unqs forms)
+              (print "\nEvaluation took " (- (get-time) (unq start-time)) " ms of real time\n")))))
